@@ -1,38 +1,33 @@
 name: Build Flutter App
-
-on:
-  push:
-    branches: [ "main" ]
-  workflow_dispatch: # Permet de lancer le build manuellement
-
+on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+
+      # 1. Utiliser Java 17 (recommandé pour les versions récentes de Flutter/Android)
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      # 2. Installer Flutter
+      - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          
-      - name: Get dependencies
-        run: flutter pub get
-          
-      - name: Build Web
-        run: flutter build web --release --no-web-resources-cdn
-        
+
+      # 3. Nettoyer et récupérer les dépendances
+      - run: flutter clean
+      - run: flutter pub get
+
+      # 4. Compiler l'APK Android
       - name: Build Android APK
-        run: flutter build apk --release
-        
-      - name: Upload Web Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-app
-          path: build/web/
-          
-      - name: Upload Android APK Artifact
-        uses: actions/upload-artifact@v4
+        run: flutter build apk --release --no-tree-shake-icons
+
+      # 5. Sauvegarder l'APK
+      - uses: actions/upload-artifact@v4
         with:
           name: android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
