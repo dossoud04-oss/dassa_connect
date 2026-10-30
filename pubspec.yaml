@@ -1,0 +1,39 @@
+name: dassa_connect
+description: Dassa Connect — application hors ligne et vocale pour Dassa-Zoumé.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+# Versions indicatives : vérifier avec « flutter pub outdated » avant la première compilation.
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1
+  drift: ^2.30.0
+  drift_flutter: ^0.2.8
+  supabase_flutter: ^2.0.0
+  connectivity_plus: ^6.0.0
+  record: ^5.1.0
+  just_audio: ^0.9.36
+  flutter_tts: ^4.0.2
+  path_provider: ^2.1.0
+  path: ^1.9.0
+  uuid: ^4.0.0
+  crypto: ^3.0.3
+  url_launcher: ^6.2.0
+  image_picker: ^1.1.0
+  cached_network_image: ^3.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  drift_dev: ^2.30.0
+  build_runner: ^2.4.9
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/logo.png
