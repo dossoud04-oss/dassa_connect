@@ -1,8 +1,4 @@
-// lib/config.dart
+const String supabaseUrl = 'https://kgcpohfcgmfrdhpvgnry.supabase.co'; 
+const String supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtnY3BvaGZjZ21mcmRocHZnbnJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMzNTYzOTMsImV4cCI6MjEwODkzMjM5M30.HGhdmrmt8clX10AleLSsA3mFmHmL_94k46ZWYF63mDc'; // Remplace ceci
 
-// Tes identifiants Supabase (récupérés sur ton tableau de bord)
-const String supabaseUrl = 'https://kgcpohfcgmfrdhpvgnry.supabase.co';
-const String supabaseAnonKey = 'COLLE_TA_CLE_ANON_ICI'; // <-- N'oublie pas de coller ta clé
-
-// Le numéro de l'administrateur (au format international avec le +229)
 const String adminPhone = '+2290160821000'; 

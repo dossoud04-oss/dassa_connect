@@ -42,3 +42,12 @@ String tempsEcoule(DateTime date) {
 
 /// Empreinte du code PIN, salée. Le code n’est jamais stocké en clair.
 String hashPin(String pin, String sel) => sha256.convert(utf8.encode('$sel:$pin')).toString();
+
+/// Vrai si deux numéros sont le même, quel que soit le format (+229…, 0…, espaces).
+/// On compare les 8 derniers chiffres : l'ancien (8 chiffres) et le nouveau format (10 chiffres) concordent.
+bool memeNumero(String a, String b) {
+  final x = chiffresSeulement(a);
+  final y = chiffresSeulement(b);
+  if (x.length < 8 || y.length < 8) return false;
+  return x.substring(x.length - 8) == y.substring(y.length - 8);
+}

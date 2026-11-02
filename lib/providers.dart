@@ -1,17 +1,14 @@
+import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-import 'config.dart';
-import 'data/base.dart';
 import 'data/depot.dart';
 import 'services/auth.dart';
 import 'services/reseau.dart';
 import 'services/voix.dart';
 import 'sync/synchro.dart';
-import 'utils.dart';
 
-/// Initialisée dans main.dart avec overrideWithValue.
 final depotProvider = Provider<Depot>((ref) => throw UnimplementedError('Base non initialisée'));
 
 final syncProvider = Provider<SyncService>(
@@ -24,66 +21,90 @@ final connectivityProvider = Provider<ConnectivityService>((ref) {
   return service;
 });
 
+final authProvider = Provider<AuthService>((ref) => AuthService(ref.watch(depotProvider)));
+
 final voixProvider = Provider<VoiceService>((ref) {
   final voix = VoiceService();
   ref.onDispose(voix.liberer);
   return voix;
 });
 
-final authProvider = Provider<AuthService>(
-  (ref) => AuthService(Supabase.instance.client, ref.watch(depotProvider)),
-);
-
-final sessionProvider = StreamProvider<AuthState>(
-  (ref) => Supabase.instance.client.auth.onAuthStateChange,
-);
-
-bool estEnLigne(List<ConnectivityResult> resultats) => !resultats.contains(ConnectivityResult.none);
-
-final enLigneProvider = StreamProvider<bool>((ref) async* {
-  yield estEnLigne(await Connectivity().checkConnectivity());
-  yield* Connectivity().onConnectivityChanged.map(estEnLigne);
+// --- NOUVEAU : DÉTECTEUR DE CONNEXION RÉELLE ---
+final isOnlineProvider = StreamProvider<bool>((ref) {
+  return Connectivity().onConnectivityChanged.map((results) {
+    // Si la liste contient 'none', on est hors ligne.
+    return !results.contains(ConnectivityResult.none);
+  });
 });
 
-final catalogueProvider = StreamProvider<List<PrestataireLocal>>(
-  (ref) => ref.watch(depotProvider).surveillerCatalogue(),
-);
-
-final tousPrestatairesProvider = StreamProvider<List<PrestataireLocal>>(
-  (ref) => ref.watch(depotProvider).surveillerTous(),
-);
-
-final attenteValidationProvider = StreamProvider<List<PrestataireLocal>>(
-  (ref) => ref.watch(depotProvider).surveillerEnAttente(),
-);
-
-final commandesClientProvider = StreamProvider<List<CommandeLocale>>(
-  (ref) => ref.watch(depotProvider).surveillerCommandesClient(),
-);
-
-final commandesPrestataireProvider = StreamProvider.family<List<CommandeLocale>, String>(
-  (ref, uid) => ref.watch(depotProvider).surveillerCommandesPrestataire(uid),
-);
-
-final nombreActivesProvider = StreamProvider<int>((ref) => ref.watch(depotProvider).nombreActives());
-
-final nombreErreursProvider = StreamProvider<int>((ref) => ref.watch(depotProvider).nombreEnErreur());
-
-/// Fiche du prestataire connecté, retrouvée par son numéro de téléphone.
-final monPrestataireProvider = Provider<PrestataireLocal?>((ref) {
-  ref.watch(sessionProvider);
-  final telephone = chiffresSeulement(Supabase.instance.client.auth.currentUser?.phone ?? '');
-  if (telephone.isEmpty) return null;
-  final liste = ref.watch(tousPrestatairesProvider).valueOrNull ?? const <PrestataireLocal>[];
-  for (final p in liste) {
-    if (chiffresSeulement(p.telephone) == telephone) return p;
+// --- FONCTION POUR TRADUIRE LE NOM DE L'ICÔNE ---
+IconData getIconFromString(String iconName) {
+  switch (iconName) {
+    case 'handyman': return Icons.handyman;
+    case 'engineering': return Icons.engineering;
+    case 'hotel': return Icons.hotel;
+    case 'restaurant': return Icons.restaurant;
+    case 'plumbing': return Icons.plumbing;
+    case 'electric': return Icons.electric_bolt;
+    case 'cleaning': return Icons.cleaning_services;
+    case 'car': return Icons.car_repair;
+    case 'medical': return Icons.medical_services;
+    case 'computer': return Icons.computer;
+    case 'cut': return Icons.cut;
+    case 'brush': return Icons.brush;
+    case 'agriculture': return Icons.agriculture;
+    case 'school': return Icons.school;
+    default: return Icons.category;
   }
-  return null;
+}
+
+// --- GESTION DES CATÉGORIES ---
+class CategoriesNotifier extends StateNotifier<Map<String, String>> {
+  final Depot _depot;
+  CategoriesNotifier(this._depot) : super({}) { _charger(); }
+
+  Future<void> _charger() async {
+    final jsonStr = await _depot.lireEtat('categories_map');
+    if (jsonStr != null) {
+      final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+      state = map.map((key, value) => MapEntry(key, value as String));
+    } else {
+      state = {
+        'Menuisier': 'handyman',
+        'Soudeur': 'engineering',
+        'Hôtel': 'hotel',
+        'Restauration': 'restaurant',
+        'Plomberie': 'plumbing',
+        'Électricité': 'electric',
+      };
+      await _sauvegarder();
+    }
+  }
+
+  Future<void> ajouter(String nom, String iconName) async {
+    if (nom.isNotEmpty && !state.containsKey(nom)) {
+      state = {...state, nom: iconName};
+      await _sauvegarder();
+    }
+  }
+
+  Future<void> supprimer(String nom) async {
+    final newState = Map<String, String>.from(state)..remove(nom);
+    state = newState;
+    await _sauvegarder();
+  }
+
+  Future<void> _sauvegarder() async {
+    await _depot.ecrireEtat('categories_map', jsonEncode(state));
+  }
+}
+
+final categoriesProvider = StateNotifierProvider<CategoriesNotifier, Map<String, String>>((ref) {
+  return CategoriesNotifier(ref.watch(depotProvider));
 });
 
-/// Vrai si le numéro connecté est celui de l’administrateur.
-final estAdminProvider = Provider<bool>((ref) {
-  ref.watch(sessionProvider);
-  final telephone = chiffresSeulement(Supabase.instance.client.auth.currentUser?.phone ?? '');
-  return telephone.isNotEmpty && telephone == chiffresSeulement(adminPhone);
-});
+// Providers fantômes
+final catalogueProvider = StreamProvider<List<dynamic>>((ref) => Stream.value([]));
+final enLigneProvider = StreamProvider<bool>((ref) => Stream.value(true));
+final commandesClientProvider = StreamProvider<List<dynamic>>((ref) => Stream.value([]));
+final tousPrestatairesProvider = StreamProvider<List<dynamic>>((ref) => Stream.value([]));

@@ -1,98 +1,59 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
-import '../providers.dart';
-import 'accueil.dart';
-import 'commandes.dart';
-import 'connexion.dart';
+import '../theme.dart';
 import 'prestataires.dart';
-import 'profil.dart';
+import 'espace.dart'; 
+import 'connexion.dart'; // On garde l'import pour ConnexionPage
 
-/// Point d’entrée de l’interface : démarre le réseau et la synchronisation, puis affiche la navigation.
-class Racine extends ConsumerStatefulWidget {
+class Racine extends StatefulWidget {
   const Racine({super.key});
-
   @override
-  ConsumerState<Racine> createState() => _RacineState();
+  State<Racine> createState() => _RacineState();
 }
 
-class _RacineState extends ConsumerState<Racine> {
-  @override
-  void initState() {
-    super.initState();
-    ref.read(connectivityProvider);
-    ref.read(syncProvider).synchroniser();
-  }
-
-  @override
-  Widget build(BuildContext context) => const PorteEntree();
-}
-
-/// Si une session existe et qu’un PIN est défini, l’application demande le PIN avant d’ouvrir.
-class PorteEntree extends ConsumerStatefulWidget {
-  const PorteEntree({super.key});
-
-  @override
-  ConsumerState<PorteEntree> createState() => _PorteEntreeState();
-}
-
-class _PorteEntreeState extends ConsumerState<PorteEntree> {
-  bool? _verrouille;
-
-  @override
-  void initState() {
-    super.initState();
-    _verifier();
-  }
-
-  Future<void> _verifier() async {
-    final session = Supabase.instance.client.auth.currentSession;
-    final pin = await ref.read(authProvider).pinDefini();
-    if (mounted) setState(() => _verrouille = session != null && pin);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final etat = _verrouille;
-    if (etat == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    if (etat) {
-      return PinPage(creation: false, onDeverrouille: () => setState(() => _verrouille = false));
-    }
-    return const Shell();
-  }
-}
-
-/// Navigation en quatre onglets, comme la maquette : Accueil, Prestataires, Messages, Profil.
-class Shell extends StatefulWidget {
-  const Shell({super.key});
-
-  @override
-  State<Shell> createState() => _ShellState();
-}
-
-class _ShellState extends State<Shell> {
-  int _onglet = 0;
+class _RacineState extends State<Racine> {
+  int _index = 0;
+  
+  // On utilise tes nouvelles pages ici
+  final List<Widget> _pages = [
+    const PrestatairesPage(), // L'accueil avec la recherche (Image 3)
+    const Center(child: Text('Liste des Prestataires (À venir)')),
+    const Center(child: Text('Messages (À venir)')),
+    const EspacePage(), // Le profil (Image 4/5)
+  ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _onglet,
-        children: const [AccueilPage(), PrestatairesPage(), CommandesPage(), ProfilPage()],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _onglet,
-        onDestinationSelected: (i) => setState(() => _onglet = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Accueil'),
-          NavigationDestination(icon: Icon(Icons.storefront_outlined), label: 'Prestataires'),
-          NavigationDestination(icon: Icon(Icons.chat_bubble_outline), label: 'Messages'),
-          NavigationDestination(icon: Icon(Icons.person_outline), label: 'Profil'),
+      body: _pages[_index],
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _index,
+        onTap: (i) => setState(() => _index = i),
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: vertDassa,
+        unselectedItemColor: Colors.grey,
+        showUnselectedLabels: true,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Accueil'),
+          BottomNavigationBarItem(icon: Icon(Icons.work), label: 'Prestataires'),
+          BottomNavigationBarItem(icon: Icon(Icons.message), label: 'Messages'),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profil'),
         ],
       ),
     );
+  }
+}
+
+// --- CE BLOC EST AJOUTÉ POUR QUE LE BOUTON "CLIENT" FONCTIONNE ---
+// Si tu as un ancien code dans connexion.dart qui utilisait ConnexionPage(onClient:..., onPro:...),
+// cette classe permet de faire le lien sans casser le reste.
+class ConnexionPageWrapper extends StatelessWidget {
+  final VoidCallback onClient;
+  final VoidCallback onPro;
+  const ConnexionPageWrapper({super.key, required this.onClient, required this.onPro});
+
+  @override
+  Widget build(BuildContext context) {
+    // On renvoie simplement la nouvelle page de connexion qui gère tout toute seule
+    return const ConnexionPage(); 
   }
 }

@@ -11,30 +11,21 @@ dependencies:
   flutter:
     sdk: flutter
   
-  # UI & State
   cupertino_icons: ^1.0.8
   flutter_riverpod: ^2.6.1
-  
-  # Base de données locale
   drift: ^2.31.0
   drift_flutter: ^0.2.8
   sqlite3_flutter_libs: ^0.5.42
-  
-  # Backend & Réseau
   supabase_flutter: ^2.8.4
   connectivity_plus: ^6.1.5
-  
-  # Audio & Média
   record: ^6.2.1
   just_audio: ^0.9.46
   flutter_tts: ^4.2.0
-  image_picker: ^1.1.2
-  
-  # Utilitaires
   uuid: ^4.5.1
   cached_network_image: ^3.4.1
   path_provider: ^2.1.5
   path: ^1.9.0
+  image_picker: ^1.1.2
   url_launcher: ^6.3.1
   crypto: ^3.0.6
 
@@ -44,6 +35,21 @@ dev_dependencies:
   flutter_lints: ^4.0.0
   build_runner: ^2.15.1
   drift_dev: ^2.31.0
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/logo.png
+
+# CONFIGURATION POUR L'ICÔNE DE L'APPLICATION
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: false
+  image_path: "assets/logo.png"
+  min_sdk_android: 21
+  web:
+    generate: true
+    image_path: "assets/logo.png"
+    background_color: "#ffffff"
+    theme_color: "#00704A"

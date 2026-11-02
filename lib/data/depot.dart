@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
+import '../utils.dart';
 import 'base.dart';
 
 /// Au-delà de ce nombre d’échecs, une opération sort de la file active et reste « en erreur ».
@@ -31,6 +32,15 @@ class Depot {
 
   Future<PrestataireLocal?> prestataireParTelephone(String telephone) =>
       (db.select(db.prestataires)..where((t) => t.telephone.equals(telephone))).getSingleOrNull();
+
+  /// Retrouve un prestataire par son numéro, quel que soit le format enregistré.
+  Future<PrestataireLocal?> prestataireParNumero(String numero) async {
+    final tous = await db.select(db.prestataires).get();
+    for (final p in tous) {
+      if (memeNumero(p.telephone, numero)) return p;
+    }
+    return null;
+  }
 
   Future<void> sauverPrestataires(List<PrestatairesCompanion> lignes) async {
     await db.batch((b) => b.insertAllOnConflictUpdate(db.prestataires, lignes));
@@ -183,6 +193,10 @@ class Depot {
   }
 
   // ---------- Valeurs persistantes ----------
+
+  /// Suit une valeur persistante : le flux émet à chaque changement (null si absente).
+  Stream<String?> surveillerEtat(String cle) =>
+      (db.select(db.etatSync)..where((t) => t.cle.equals(cle))).watchSingleOrNull().map((ligne) => ligne?.valeur);
 
   Future<String?> lireEtat(String cle) async {
     final ligne = await (db.select(db.etatSync)..where((t) => t.cle.equals(cle))).getSingleOrNull();

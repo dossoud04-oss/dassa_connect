@@ -1,3 +1,11 @@
 build/
 .dart_tool/
 .env
+.flutter-plugins
+.flutter-plugins-dependencies
+android/local.properties
+android/.gradle/
+.idea/
+*.iml
+.pub-cache/
+.pub/

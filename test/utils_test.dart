@@ -23,4 +23,11 @@ void main() {
     expect(hashPin('1234', 'sel'), isNot(hashPin('1235', 'sel')));
     expect(hashPin('1234', 'sel'), isNot(hashPin('1234', 'autre')));
   });
+
+  test('memeNumero ignore le format et compare les 8 derniers chiffres', () {
+    expect(memeNumero('+229 97 00 00 00', '97000000'), isTrue);
+    expect(memeNumero('+2290197000000', '97000000'), isTrue);
+    expect(memeNumero('+22997000000', '+22996000000'), isFalse);
+    expect(memeNumero('1234', '97000000'), isFalse);
+  });
 }

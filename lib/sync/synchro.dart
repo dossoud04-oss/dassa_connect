@@ -2,11 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException, SupabaseClient;
 
 import '../data/base.dart';
 import '../data/depot.dart';
-import '../utils.dart';
 import 'politique.dart';
 
 enum StatutSync { ok, horsLigne, intervalle, dejaEnCours, erreur }
@@ -31,13 +30,16 @@ class SyncService {
   SyncService(this._depot, this._client);
 
   final Depot _depot;
-  final SupabaseClient _client;
+  /// Null quand Supabase n'est pas configuré : l'application reste alors en mode local.
+  final SupabaseClient? _client;
+  SupabaseClient get _c => _client!;
   bool _enCours = false;
 
   /// Teste une vraie requête : un Wi-Fi sans accès Internet renvoie faux.
   Future<bool> estJoignable() async {
+    if (_client == null) return false;
     try {
-      await _client.from('prestataires').select('id').limit(1).timeout(const Duration(seconds: 5));
+      await _c.from('prestataires').select('id').limit(1).timeout(const Duration(seconds: 5));
       return true;
     } catch (_) {
       return false;
@@ -101,22 +103,22 @@ class SyncService {
         final chemin = donnees.remove('audio_local') as String;
         donnees['audio_url'] = await _televerser('voice_notes', chemin, id);
       }
-      await _client.from(operation.tableCible).insert(donnees);
+      await _c.from(operation.tableCible).insert(donnees);
     } else if (operation.action == 'update') {
-      await _client.from(operation.tableCible).update(donnees).eq('id', id);
+      await _c.from(operation.tableCible).update(donnees).eq('id', id);
     } else {
       final url = await _televerser('prestataire_photos', donnees['photo_local'] as String, id);
-      final actuelle = await _client.from('prestataires').select('photos_url').eq('id', id).single();
+      final actuelle = await _c.from('prestataires').select('photos_url').eq('id', id).single();
       final photos = [...((actuelle['photos_url'] as List?) ?? const []), url];
-      await _client.from('prestataires').update({'photos_url': photos}).eq('id', id);
+      await _c.from('prestataires').update({'photos_url': photos}).eq('id', id);
     }
   }
 
   Future<String> _televerser(String bucket, String cheminLocal, String id) async {
     final extension = cheminLocal.split('.').last;
     final nom = '${id}_${DateTime.now().millisecondsSinceEpoch}.$extension';
-    await _client.storage.from(bucket).upload(nom, File(cheminLocal));
-    return _client.storage.from(bucket).getPublicUrl(nom);
+    await _c.storage.from(bucket).upload(nom, File(cheminLocal));
+    return _c.storage.from(bucket).getPublicUrl(nom);
   }
 
   // ---------- Réception ----------
@@ -130,7 +132,7 @@ class SyncService {
 
   Future<int> _tirerPrestataires() async {
     final curseur = await _depot.lireEtat('curseur:prestataires');
-    final base = _client.from('prestataires').select();
+    final base = _c.from('prestataires').select();
     final filtre = curseur == null ? base : base.gt('updated_at', curseur);
     final lignes = await filtre.order('updated_at', ascending: true);
     if (lignes.isEmpty) return 0;
@@ -145,7 +147,7 @@ class SyncService {
   /// Le prestataire connecté reçoit les commandes qui lui sont adressées.
   Future<int> _tirerCommandes(String prestataireId) async {
     final curseur = await _depot.lireEtat('curseur:commandes');
-    final base = _client.from('commandes').select().eq('prestataire_id', prestataireId);
+    final base = _c.from('commandes').select().eq('prestataire_id', prestataireId);
     final filtre = curseur == null ? base : base.gt('updated_at', curseur);
     final lignes = await filtre.order('updated_at', ascending: true);
     if (lignes.isEmpty) return 0;
@@ -157,10 +159,11 @@ class SyncService {
     return lignes.length;
   }
 
+  /// Identifiant du prestataire connecté, retrouvé grâce au numéro enregistré sur le téléphone.
   Future<String?> _monIdentifiant() async {
-    final telephone = chiffresSeulement(_client.auth.currentUser?.phone ?? '');
-    if (telephone.isEmpty) return null;
-    return (await _depot.prestataireParTelephone(telephone))?.uid;
+    final telephone = await _depot.lireEtat('telephone');
+    if (telephone == null) return null;
+    return (await _depot.prestataireParNumero(telephone))?.uid;
   }
 
   PrestatairesCompanion _versPrestataire(Map<String, dynamic> m) => PrestatairesCompanion(

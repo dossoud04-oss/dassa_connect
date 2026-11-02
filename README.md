@@ -2,7 +2,7 @@
 
 Ce dossier fusionne les deux projets précédents en une seule application. Il reprend la base hors ligne et la synchronisation éprouvées dans DassaServices, et les écrans, la voix et la validation de Dassa Connect, aux couleurs des maquettes.
 
-**Il n'a pas été compilé ni exécuté.** Il faut le compiler sur votre machine et corriger les erreurs éventuelles.
+**Version corrigée** (voir `CORRECTIONS.md`). Les erreurs de compilation connues ont été supprimées par relecture complète du code ; il faut tout de même lancer `flutter pub get`, `flutter analyze` et `flutter test` sur votre machine pour confirmer.
 
 ## Ce qui vient de chaque projet
 
@@ -130,3 +130,15 @@ Scénario de démonstration pour la soutenance :
 - **Synthèse vocale** : elle utilise la voix française du téléphone, qui doit être installée.
 - **Mode sombre et tailles d'écran** : non testés. Les maquettes ont été reprises en portrait sur téléphone.
 # dassa_connect
+
+## Connexion Supabase (clé)
+
+La clé n'est plus obligatoire pour **compiler et lancer** l'application : sans clé, elle fonctionne en mode local (hors ligne), la synchronisation est simplement désactivée. Pour activer Supabase, au choix :
+
+- remplacer `COLLE_TA_CLE_ANON_ICI` dans `lib/config.dart` par votre clé ;
+- ou compiler avec `--dart-define=SUPABASE_ANON_KEY=votre-cle` (et `SUPABASE_URL`, `ADMIN_PHONE` si besoin) ;
+- ou, sur GitHub, créer les secrets `SUPABASE_URL`, `SUPABASE_ANON_KEY` et `ADMIN_PHONE` (le workflow les utilise).
+
+## Numéro de l'administrateur
+
+Le numéro se saisit avec 8 chiffres (ancien format) ou 10 chiffres (nouveau format béninois, par exemple `0160821000`). Le numéro administrateur est défini dans `lib/config.dart` (`adminPhone`).

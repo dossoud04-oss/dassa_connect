@@ -8,12 +8,25 @@ import 'data/connexion.dart';
 import 'data/depot.dart';
 import 'providers.dart';
 import 'theme.dart';
-import 'ui/shell.dart';
+import 'ui/connexion.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseAnonKey);
+
+  try {
+    await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseAnonKey);
+    
+    // Connexion anonyme (pour que Supabase autorise l'envoi des données)
+    if (Supabase.instance.client.auth.currentUser == null) {
+      await Supabase.instance.client.auth.signInAnonymously();
+      debugPrint("✅ Connecté à Supabase en mode anonyme");
+    }
+  } catch (e) {
+    debugPrint("⚠️ Supabase non initialisé (Mode local) : $e");
+  }
+
   final db = AppDatabase(ouvrirConnexion());
+
   runApp(
     ProviderScope(
       overrides: [depotProvider.overrideWithValue(Depot(db))],
@@ -22,16 +35,22 @@ Future<void> main() async {
   );
 }
 
-class DassaConnectApp extends StatelessWidget {
+// 1. On transforme la classe en ConsumerWidget
+class DassaConnectApp extends ConsumerWidget {
   const DassaConnectApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 2. C'EST LA LIGNE MAGIQUE ! 
+    // En écoutant le connectivityProvider ici, il démarre au lancement de l'app 
+    // et tourne en arrière-plan tant que l'application est ouverte.
+    ref.watch(connectivityProvider);
+
     return MaterialApp(
       title: 'Dassa Connect',
       debugShowCheckedModeBanner: false,
       theme: themeDassa(),
-      home: const Racine(),
+      home: const ConnexionPage(),
     );
   }
 }
