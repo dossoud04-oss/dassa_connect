@@ -42,9 +42,66 @@ class Depot {
     return null;
   }
 
+
+  /// Crée ou met à jour le profil prestataire local (statut pending par défaut).
+  Future<String> creerOuMajPrestataire({
+    required String telephone,
+    required String nom,
+    required String categorie,
+    required String quartier,
+    String description = '',
+    int prixBase = 0,
+    List<String> photos = const [],
+    List<Map<String, dynamic>> tarifs = const [],
+  }) async {
+    final existant = await prestataireParNumero(telephone);
+    final uid = existant?.uid ?? _uuid.v4();
+    final maintenant = DateTime.now().toUtc();
+    final companion = PrestatairesCompanion(
+      uid: Value(uid),
+      nom: Value(nom),
+      categorie: Value(categorie),
+      quartier: Value(quartier),
+      description: Value(description),
+      prixBase: Value(prixBase),
+      photos: Value(jsonEncode(photos)),
+      tarifs: Value(jsonEncode(tarifs)),
+      telephone: Value(telephone),
+      statut: Value(existant?.statut ?? 'pending'),
+      vues: Value(existant?.vues ?? 0),
+      updatedAt: Value(maintenant),
+    );
+    await db.transaction(() async {
+      await db.into(db.prestataires).insertOnConflictUpdate(companion);
+      await _ajouter('prestataires', uid, existant == null ? 'insert' : 'update', {
+        'id': uid,
+        'nom': nom,
+        'categorie': categorie,
+        'quartier': quartier,
+        'description': description,
+        'prix_base': prixBase,
+        'photos': photos,
+        'tarifs': tarifs,
+        'telephone': telephone,
+        'statut': existant?.statut ?? 'pending',
+      });
+    });
+    return uid;
+  }
+
   Future<void> sauverPrestataires(List<PrestatairesCompanion> lignes) async {
     await db.batch((b) => b.insertAllOnConflictUpdate(db.prestataires, lignes));
   }
+
+  Future<void> supprimerPrestataire(String uid) async {
+    await db.transaction(() async {
+      await (db.delete(db.prestataires)..where((t) => t.uid.equals(uid))).go();
+      await _ajouter('prestataires', uid, 'delete', {'id': uid});
+    });
+  }
+
+  Stream<List<CommandeLocale>> surveillerToutesCommandes() =>
+      (db.select(db.commandes)..orderBy([(t) => OrderingTerm.desc(t.creeLe)])).watch();
 
   Future<void> changerStatutPrestataire(String uid, String statut) =>
       _modifierFiche(uid, PrestatairesCompanion(statut: Value(statut)), {'statut': statut});

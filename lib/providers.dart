@@ -3,6 +3,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'data/base.dart';
 import 'data/depot.dart';
 import 'services/auth.dart';
 import 'services/reseau.dart';
@@ -11,9 +12,16 @@ import 'sync/synchro.dart';
 
 final depotProvider = Provider<Depot>((ref) => throw UnimplementedError('Base non initialisée'));
 
-final syncProvider = Provider<SyncService>(
-  (ref) => SyncService(ref.watch(depotProvider), Supabase.instance.client),
-);
+final syncProvider = Provider<SyncService>((ref) {
+  // Si Supabase n'a pas pu démarrer (hors ligne au lancement), on reste en mode local.
+  SupabaseClient? client;
+  try {
+    client = Supabase.instance.client;
+  } catch (_) {
+    client = null;
+  }
+  return SyncService(ref.watch(depotProvider), client);
+});
 
 final connectivityProvider = Provider<ConnectivityService>((ref) {
   final service = ConnectivityService(ref.watch(syncProvider))..demarrer();
@@ -29,19 +37,36 @@ final voixProvider = Provider<VoiceService>((ref) {
   return voix;
 });
 
-// --- NOUVEAU : DÉTECTEUR DE CONNEXION RÉELLE ---
-final isOnlineProvider = StreamProvider<bool>((ref) {
-  return Connectivity().onConnectivityChanged.map((results) {
-    // Si la liste contient 'none', on est hors ligne.
-    return !results.contains(ConnectivityResult.none);
-  });
+final isOnlineProvider = StreamProvider<bool>((ref) async* {
+  bool _estConnecte(List<ConnectivityResult> results) {
+    if (results.isEmpty) return false;
+    // Sur web / desktop, wifi/ethernet/mobile/vpn/other = en ligne
+    return results.any((r) =>
+        r == ConnectivityResult.wifi ||
+        r == ConnectivityResult.mobile ||
+        r == ConnectivityResult.ethernet ||
+        r == ConnectivityResult.vpn ||
+        r == ConnectivityResult.other);
+  }
+
+  // 1) État initial immédiat (évite le faux "Mode Avion" au démarrage)
+  try {
+    final initial = await Connectivity().checkConnectivity();
+    yield _estConnecte(initial);
+  } catch (_) {
+    yield true; // en cas d'erreur de plugin, on suppose en ligne
+  }
+
+  // 2) Puis écoute des changements
+  await for (final results in Connectivity().onConnectivityChanged) {
+    yield _estConnecte(results);
+  }
 });
 
-// --- FONCTION POUR TRADUIRE LE NOM DE L'ICÔNE ---
 IconData getIconFromString(String iconName) {
   switch (iconName) {
-    case 'handyman': return Icons.handyman;
-    case 'engineering': return Icons.engineering;
+    case 'handyman': return Icons.carpenter;
+    case 'engineering': return Icons.precision_manufacturing;
     case 'hotel': return Icons.hotel;
     case 'restaurant': return Icons.restaurant;
     case 'plumbing': return Icons.plumbing;
@@ -50,7 +75,7 @@ IconData getIconFromString(String iconName) {
     case 'car': return Icons.car_repair;
     case 'medical': return Icons.medical_services;
     case 'computer': return Icons.computer;
-    case 'cut': return Icons.cut;
+    case 'cut': return Icons.content_cut;
     case 'brush': return Icons.brush;
     case 'agriculture': return Icons.agriculture;
     case 'school': return Icons.school;
@@ -58,7 +83,6 @@ IconData getIconFromString(String iconName) {
   }
 }
 
-// --- GESTION DES CATÉGORIES ---
 class CategoriesNotifier extends StateNotifier<Map<String, String>> {
   final Depot _depot;
   CategoriesNotifier(this._depot) : super({}) { _charger(); }
@@ -99,12 +123,18 @@ class CategoriesNotifier extends StateNotifier<Map<String, String>> {
   }
 }
 
-final categoriesProvider = StateNotifierProvider<CategoriesNotifier, Map<String, String>>((ref) {
-  return CategoriesNotifier(ref.watch(depotProvider));
-});
+// Correction de la syntaxe du StateNotifierProvider
+final categoriesProvider = StateNotifierProvider<CategoriesNotifier, Map<String, String>>(
+  (ref) => CategoriesNotifier(ref.watch(depotProvider)),
+);
 
-// Providers fantômes
-final catalogueProvider = StreamProvider<List<dynamic>>((ref) => Stream.value([]));
+final catalogueProvider = StreamProvider<List<PrestataireLocal>>(
+  (ref) => ref.watch(depotProvider).surveillerCatalogue(),
+);
 final enLigneProvider = StreamProvider<bool>((ref) => Stream.value(true));
-final commandesClientProvider = StreamProvider<List<dynamic>>((ref) => Stream.value([]));
-final tousPrestatairesProvider = StreamProvider<List<dynamic>>((ref) => Stream.value([]));
+final commandesClientProvider = StreamProvider<List<CommandeLocale>>(
+  (ref) => ref.watch(depotProvider).surveillerCommandesClient(),
+);
+final tousPrestatairesProvider = StreamProvider<List<PrestataireLocal>>(
+  (ref) => ref.watch(depotProvider).surveillerTous(),
+);

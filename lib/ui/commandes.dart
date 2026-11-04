@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import '../data/base.dart';
 import '../providers.dart';
 import '../utils.dart';
@@ -8,7 +7,6 @@ import 'widgets.dart';
 
 const _libellesStatut = {'nouvelle': 'Envoyée', 'ecoutee': 'Écoutée', 'livree': 'Livrée'};
 
-/// Onglet Commandes : les commandes envoyées depuis ce téléphone.
 class CommandesPage extends ConsumerWidget {
   const CommandesPage({super.key});
 
@@ -21,7 +19,7 @@ class CommandesPage extends ConsumerWidget {
           ? const Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
-                child: Text('Vos commandes apparaîtront ici.', textAlign: TextAlign.center, style: TextStyle(fontSize: 18)),
+                child: Text('Vos commandes apparaîtront ici.', textAlign: TextAlign.center, style: TextStyle(fontSize: 16)),
               ),
             )
           : ListView.builder(
@@ -58,7 +56,7 @@ class _CarteCommande extends StatelessWidget {
             ],
             if (c.messageTexte != null) ...[
               const SizedBox(height: 8),
-              Text(c.messageTexte!, style: const TextStyle(fontSize: 18)),
+              Text(c.messageTexte!, style: const TextStyle(fontSize: 16)),
             ],
           ],
         ),

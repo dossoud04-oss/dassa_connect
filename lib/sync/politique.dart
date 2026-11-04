@@ -1,9 +1,8 @@
-/// Intervalle minimal entre deux synchronisations automatiques (exigence ENF-10).
-/// La synchronisation demandée à la main par l’utilisateur ne respecte pas cet intervalle.
-const Duration intervalleSyncAutomatique = Duration(minutes: 15);
+/// Intervalle minimal entre deux synchronisations automatiques.
+const Duration intervalleMinimal = Duration(minutes: 15);
 
-/// Vrai si une synchronisation automatique peut partir maintenant.
+/// Vrai si une synchronisation automatique peut être lancée maintenant.
 bool peutSynchroniserApres(DateTime? derniereTentative, DateTime maintenant) {
   if (derniereTentative == null) return true;
-  return maintenant.difference(derniereTentative) >= intervalleSyncAutomatique;
+  return maintenant.difference(derniereTentative) >= intervalleMinimal;
 }

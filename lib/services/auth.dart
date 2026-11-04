@@ -10,9 +10,10 @@ class AuthService {
   static const int tempsBlocageMinutes = 1;
 
   Future<void> connecterLocalement(String numero) async {
-    final numeroComplet = '+229$numero';
+    final chiffres = numero.replaceAll(RegExp(r'[^0-9]'), '');
+    final numeroComplet = chiffres.startsWith('229') ? '+$chiffres' : '+229$chiffres';
     await _depot.ecrireEtat('telephone', numeroComplet);
-    final estAdmin = (numeroComplet == adminPhone);
+    final estAdmin = memeNumero(numeroComplet, adminPhone);
     await _depot.ecrireEtat('est_admin', estAdmin ? 'true' : 'false');
   }
 
@@ -32,15 +33,15 @@ class AuthService {
     final bloqueJusquaStr = await _depot.lireEtat('pin_bloque_jusqua_$numero');
     if (bloqueJusquaStr != null) {
       final bloqueJusqua = DateTime.tryParse(bloqueJusquaStr);
-      if (bloqueJusqua != null && DateTime.now().isBefore(bloqueJusqua)) return false; 
+      if (bloqueJusqua != null && DateTime.now().isBefore(bloqueJusqua)) return false;
       await _depot.supprimerEtat('pin_bloque_jusqua_$numero');
       await _depot.supprimerEtat('pin_tentatives_$numero');
     }
-    
+
     final sel = await _depot.lireEtat('pin_sel_$numero');
     final attendu = await _depot.lireEtat('pin_hash_$numero');
     if (sel == null || attendu == null) return false;
-    
+
     if (hashPin(pin, sel) == attendu) {
       await _depot.supprimerEtat('pin_tentatives_$numero');
       return true;
@@ -61,5 +62,23 @@ class AuthService {
   Future<void> deconnecter() async {
     await _depot.supprimerEtat('telephone');
     await _depot.supprimerEtat('est_admin');
+  }
+
+  // ---------- 2e code admin (alphanumérique, saisie clavier) ----------
+
+  Future<bool> codeAdminDefini(String numero) async =>
+      (await _depot.lireEtat('admin_code_hash_$numero')) != null;
+
+  Future<void> definirCodeAdmin(String numero, String code) async {
+    final sel = const Uuid().v4();
+    await _depot.ecrireEtat('admin_code_sel_$numero', sel);
+    await _depot.ecrireEtat('admin_code_hash_$numero', hashPin(code, sel));
+  }
+
+  Future<bool> verifierCodeAdmin(String numero, String code) async {
+    final sel = await _depot.lireEtat('admin_code_sel_$numero');
+    final attendu = await _depot.lireEtat('admin_code_hash_$numero');
+    if (sel == null || attendu == null) return false;
+    return hashPin(code, sel) == attendu;
   }
 }

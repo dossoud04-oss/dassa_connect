@@ -7,113 +7,155 @@ class EspacePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Mon Espace'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {},
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+      backgroundColor: vertHeader,
+      body: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Prestataire Dashboard',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: vertDassa),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(child: _carteStat('Vues', '152', Icons.visibility)),
-                const SizedBox(width: 12),
-                Expanded(child: _carteStat('Commandes', '12', Icons.receipt_long)),
-                const SizedBox(width: 12),
-                Expanded(child: _carteStat('Revenu', '8 450', Icons.monetization_on)),
-              ],
-            ),
-            const SizedBox(height: 24),
-            const Row(
-              children: [
-                Icon(Icons.mic, color: vertDassa),
-                SizedBox(width: 8),
-                Text('Commandes vocales entrantes', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _carteCommande('Commande #1021', 'Légumes & Riz • Il y a 5 min', '0:18'),
-            _carteCommande('Commande #1020', 'Poulet Yassa • Il y a 12 min', '0:24'),
-            _carteCommande('Commande #1019', 'Thieboudienne • Il y a 27 min', '0:30'),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.camera_alt, color: vertDassa),
-                    label: const Text('Ajouter photo', style: TextStyle(color: vertDassa)),
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    onPressed: () => Navigator.maybePop(context),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.edit),
-                    label: const Text('Modifier prix'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: vertDassa,
-                      foregroundColor: Colors.white,
+                  const Expanded(
+                    child: Text(
+                      'Dassa Connect',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.store, color: vertDassa),
-                          SizedBox(width: 8),
-                          Text('Ma boutique', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: vertDassa,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Text('Approuvé', style: TextStyle(color: Colors.white, fontSize: 12)),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  const Row(
-                    children: [
-                      Icon(Icons.check_circle, color: Colors.green, size: 16),
-                      SizedBox(width: 4),
-                      Text('Statut : Approuvé • Vérifié', style: TextStyle(color: Colors.green)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Ouverte • Répond en 10 min • Dernière mise à jour aujourd\'hui',
-                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  IconButton(
+                    icon: const Icon(Icons.settings, color: Colors.white),
+                    onPressed: () {},
                   ),
                 ],
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.only(left: 20, bottom: 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Prestataire Dashboard', style: TextStyle(color: Colors.white70, fontSize: 14)),
+              ),
+            ),
+            // Corps blanc arrondi
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                ),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Stats
+                      Row(
+                        children: [
+                          Expanded(child: _statCard(Icons.visibility_outlined, 'Vues', '152')),
+                          const SizedBox(width: 10),
+                          Expanded(child: _statCard(Icons.assignment_outlined, 'Commandes', '12')),
+                          const SizedBox(width: 10),
+                          Expanded(child: _statCard(Icons.account_balance_wallet_outlined, 'Revenue', '8 450 FCFA')),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      // Commandes vocales
+                      const Row(
+                        children: [
+                          Icon(Icons.mic, color: vertDassa, size: 22),
+                          SizedBox(width: 8),
+                          Text('Commandes vocales entrantes', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: vertDassa)),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      _commandeCard('AM', 'Commande #1021', 'Légumes & Riz • Il y a 5 min', '0:18'),
+                      _commandeCard('KD', 'Commande #1020', 'Poulet Yassa • Il y a 12 min', '0:24'),
+                      _commandeCard('SL', 'Commande #1019', 'Thieboudienne • Il y a 27 min', '0:30'),
+                      const SizedBox(height: 16),
+                      // Boutons
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {},
+                              icon: const Icon(Icons.camera_alt_outlined, size: 18),
+                              label: const Text('Ajouter photo'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: vertDassa,
+                                side: const BorderSide(color: vertDassa),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () {},
+                              icon: const Icon(Icons.edit, size: 18),
+                              label: const Text('Modifier prix'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: vertDassa,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      // Ma boutique
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: vertClair,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.storefront, color: vertDassa),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text('Ma boutique', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: vertDassa)),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.check_circle, color: vertDassa, size: 16),
+                                      SizedBox(width: 4),
+                                      Text('Approuvé', style: TextStyle(color: vertDassa, fontWeight: FontWeight.w700, fontSize: 12)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            const Text('Statut : Approuvé • Vérifié', style: TextStyle(color: vertDassa, fontWeight: FontWeight.w600, fontSize: 13)),
+                            const SizedBox(height: 4),
+                            const Text('Ouverte • Répond en 10 min • Dernière mise à jour aujourd\'hui', style: TextStyle(color: grisTexte, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ],
@@ -122,42 +164,62 @@ class EspacePage extends StatelessWidget {
     );
   }
 
-  Widget _carteStat(String titre, String valeur, IconData icone) {
+  Widget _statCard(IconData icon, String label, String value) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
       decoration: BoxDecoration(
-        // CORRECTION ICI : withValues à la place de withOpacity
-        color: vertDassa.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(16),
+        color: vertClair,
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
         children: [
-          Icon(icone, color: vertDassa),
-          const SizedBox(height: 8),
-          Text(titre, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          const SizedBox(height: 4),
-          Text(valeur, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: vertDassa)),
+          Icon(icon, color: vertDassa, size: 26),
+          const SizedBox(height: 6),
+          Text(label, style: const TextStyle(fontSize: 12, color: grisTexte)),
+          const SizedBox(height: 2),
+          Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: vertDassa)),
         ],
       ),
     );
   }
 
-  Widget _carteCommande(String titre, String description, String duree) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 0,
-      color: Colors.white,
-      child: ListTile(
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          // CORRECTION ICI : withValues à la place de withOpacity
-          decoration: BoxDecoration(color: vertDassa.withValues(alpha: 0.1), shape: BoxShape.circle),
-          child: const Icon(Icons.play_arrow, color: vertDassa),
-        ),
-        title: Text(titre, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(description),
-        trailing: Text('Audio • $duree', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+  Widget _commandeCard(String initials, String title, String subtitle, String duree) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 6, offset: const Offset(0, 2)),
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: vertClair,
+            child: Text(initials, style: const TextStyle(color: vertDassa, fontWeight: FontWeight.bold, fontSize: 13)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                const SizedBox(height: 2),
+                Text(subtitle, style: const TextStyle(color: grisTexte, fontSize: 12)),
+              ],
+            ),
+          ),
+          Column(
+            children: [
+              const Icon(Icons.play_circle_fill, color: vertDassa, size: 32),
+              Text('Audio • $duree', style: const TextStyle(fontSize: 10, color: grisTexte)),
+            ],
+          ),
+        ],
       ),
     );
   }

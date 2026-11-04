@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import 'prestataires.dart';
+import 'profil_client.dart';
+import 'widgets.dart';
 
 class ClientShell extends StatefulWidget {
   const ClientShell({super.key});
@@ -13,19 +15,23 @@ class _ClientShellState extends State<ClientShell> {
 
   final List<Widget> _pages = [
     const PrestatairesPage(),
-    const Center(child: Text('Tous les prestataires')),
-    const Center(child: Text('Messages')),
-    const Center(child: Text('Mon Profil Client')),
+    const PrestatairesPage(), // liste = même source pour l'instant
+    const Center(child: Text('Messages — bientôt disponible')),
+    const ProfilClientPage(),
   ];
 
   @override
   Widget build(BuildContext context) {
-    // ON BRIDE LA LARGEUR ICI POUR AVOIR UN EFFET MOBILE SUR PC
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 500),
         child: Scaffold(
-          body: _pages[_index],
+          body: Column(
+            children: [
+              const SafeArea(bottom: false, child: BandeauConnexion(compact: true)),
+              Expanded(child: _pages[_index]),
+            ],
+          ),
           bottomNavigationBar: BottomNavigationBar(
             currentIndex: _index,
             onTap: (i) => setState(() => _index = i),

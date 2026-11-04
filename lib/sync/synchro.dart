@@ -1,8 +1,10 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/drift.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException, SupabaseClient;
+import 'package:image_picker/image_picker.dart' show XFile;
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show FileOptions, PostgrestException, StorageException, SupabaseClient;
 
 import '../data/base.dart';
 import '../data/depot.dart';
@@ -55,8 +57,8 @@ class SyncService {
     }
     _enCours = true;
     try {
-      await _depot.ecrireDate(_cleTentative, maintenant);
       if (!await estJoignable()) return const BilanSync(StatutSync.horsLigne);
+      await _depot.ecrireDate(_cleTentative, maintenant);
       final envoi = await _pousser();
       final recues = await _tirer();
       await _depot.ecrireDate(_cleDerniereSync, DateTime.now().toUtc());
@@ -66,6 +68,13 @@ class SyncService {
     } finally {
       _enCours = false;
     }
+  }
+
+  /// Envoi rapide : s'il reste des opérations en attente, on synchronise sans attendre l'intervalle.
+  Future<void> envoyerSiEnAttente() async {
+    if (_enCours || _client == null) return;
+    if ((await _depot.lireActives(limite: 1)).isEmpty) return;
+    await synchroniser(manuelle: true);
   }
 
   // ---------- Envoi de la file ----------
@@ -85,6 +94,9 @@ class SyncService {
         await _depot.acquitter(operation.id);
         envoyees++;
       } on PostgrestException {
+        echecs++;
+        await _depot.noterEchec(operation);
+      } on StorageException {
         echecs++;
         await _depot.noterEchec(operation);
       } catch (_) {
@@ -115,9 +127,31 @@ class SyncService {
   }
 
   Future<String> _televerser(String bucket, String cheminLocal, String id) async {
-    final extension = cheminLocal.split('.').last;
+    final brut = cheminLocal.split('?').first.split('.').last.toLowerCase();
+    final extension =
+        RegExp(r'^[a-z0-9]{2,5}$').hasMatch(brut) ? brut : (bucket == 'voice_notes' ? 'webm' : 'jpg');
+    const types = {
+      'm4a': 'audio/mp4',
+      'webm': 'audio/webm',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+    };
+
+    // XFile lit aussi bien un fichier Android qu'une adresse blob: du navigateur.
+    final List<int> octets;
+    try {
+      octets = await XFile(cheminLocal).readAsBytes();
+    } catch (_) {
+      throw StorageException('Fichier local introuvable');
+    }
+
     final nom = '${id}_${DateTime.now().millisecondsSinceEpoch}.$extension';
-    await _c.storage.from(bucket).upload(nom, File(cheminLocal));
+    await _c.storage.from(bucket).uploadBinary(
+          nom,
+          Uint8List.fromList(octets),
+          fileOptions: FileOptions(contentType: types[extension]),
+        );
     return _c.storage.from(bucket).getPublicUrl(nom);
   }
 

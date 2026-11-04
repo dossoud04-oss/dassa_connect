@@ -6,6 +6,8 @@ import 'package:image_picker/image_picker.dart';
 import '../providers.dart';
 import '../theme.dart';
 import 'connexion.dart';
+import 'formulaire_prestataire.dart';
+import 'widgets.dart';
 
 class PrestataireShell extends ConsumerStatefulWidget {
   const PrestataireShell({super.key});
@@ -96,9 +98,20 @@ class _PrestataireShellState extends ConsumerState<PrestataireShell> {
     );
   }
 
+  Future<void> _ouvrirFiche() async {
+    final tel = await ref.read(depotProvider).lireEtat('telephone') ?? '';
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FormulairePrestatairePage(telephone: tel, edition: true),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final List<Widget> _pages = [
+    final List<Widget> pages = [
       _pageAccueil(),
       _pageCommandes(),
       _pageBoutique(),
@@ -116,7 +129,12 @@ class _PrestataireShellState extends ConsumerState<PrestataireShell> {
             foregroundColor: Colors.white,
             actions: [IconButton(icon: const Icon(Icons.settings), onPressed: _seDeconnecter)],
           ),
-          body: _pages[_index],
+          body: Column(
+            children: [
+              const BandeauConnexion(compact: true),
+              Expanded(child: pages[_index]),
+            ],
+          ),
           bottomNavigationBar: BottomNavigationBar(
             currentIndex: _index,
             onTap: (i) => setState(() => _index = i),
@@ -167,7 +185,31 @@ class _PrestataireShellState extends ConsumerState<PrestataireShell> {
           ),
           const SizedBox(height: 20),
           const Text('Prestataire Dashboard', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: vertDassa)),
-          const SizedBox(height: 20),
+          const SizedBox(height: 8),
+          FutureBuilder(
+            future: ref.read(depotProvider).lireEtat('telephone').then((tel) async {
+              if (tel == null) return null;
+              return ref.read(depotProvider).prestataireParNumero(tel);
+            }),
+            builder: (context, snap) {
+              final p = snap.data;
+              final statut = p?.statut ?? 'pending';
+              final label = statut == 'approved' ? 'Approuvé • Visible' : (statut == 'rejected' ? 'Refusé' : 'En attente de validation');
+              final color = statut == 'approved' ? const Color(0xFF16A34A) : (statut == 'rejected' ? Colors.red : orangeDassa);
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+                child: Row(children: [
+                  Icon(Icons.verified, color: color, size: 18),
+                  const SizedBox(width: 8),
+                  Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 13)),
+                ]),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(child: _carteStat('Vues', '0', Icons.visibility)),
@@ -271,6 +313,17 @@ class _PrestataireShellState extends ConsumerState<PrestataireShell> {
             icon: const Icon(Icons.edit),
             label: const Text('Modifier le prix de base'),
             style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: _ouvrirFiche,
+            icon: const Icon(Icons.badge_outlined),
+            label: const Text('Modifier ma fiche (nom, métier, quartier, photos)'),
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 50),
+              backgroundColor: vertDassa,
+              foregroundColor: Colors.white,
+            ),
           ),
         ],
       ),

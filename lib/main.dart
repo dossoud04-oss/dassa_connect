@@ -14,15 +14,20 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
-    await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseAnonKey);
-    
-    // Connexion anonyme (pour que Supabase autorise l'envoi des données)
+    await Supabase.initialize(
+      url: supabaseUrl,
+      publishableKey: supabaseAnonKey,
+    );
+
+    // Connexion anonyme pour autoriser les écritures côté Supabase (RLS)
     if (Supabase.instance.client.auth.currentUser == null) {
       await Supabase.instance.client.auth.signInAnonymously();
-      debugPrint("✅ Connecté à Supabase en mode anonyme");
+      debugPrint('✅ Connecté à Supabase en mode anonyme');
     }
-  } catch (e) {
-    debugPrint("⚠️ Supabase non initialisé (Mode local) : $e");
+  } catch (e, st) {
+    // Mode 100 % local si pas de réseau / clé invalide / hors ligne au démarrage
+    debugPrint('⚠️ Supabase non initialisé (Mode local) : $e');
+    debugPrint('$st');
   }
 
   final db = AppDatabase(ouvrirConnexion());
