@@ -1,37 +1,36 @@
-name: Build Flutter App
-on: [push, workflow_dispatch]
+name: Build Dassa Connect
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Utiliser Java 17 (recommandé pour les versions récentes de Flutter/Android)
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      # 2. Installer Flutter
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      # 3. Nettoyer et récupérer les dépendances
       - run: flutter clean
       - run: flutter pub get
 
-      # 4. Compiler l'APK Android
+      # Compilation d'un seul APK ultra-compatible (ARM 32 et 64 bits)
       - name: Build Android APK
-        run: >
-          flutter build apk --release --no-tree-shake-icons
-          --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-          --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
-          --dart-define=ADMIN_PHONE=${{ secrets.ADMIN_PHONE }}
+        run: flutter build apk --release --target-platform android-arm,android-arm64 --no-tree-shake-icons
 
-      # 5. Sauvegarder l'APK
-      - uses: actions/upload-artifact@v4
+      # Sauvegarde de l'APK
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
         with:
           name: android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
