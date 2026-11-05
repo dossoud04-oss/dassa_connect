@@ -103,7 +103,7 @@ class _FormulairePrestatairePageState extends ConsumerState<FormulairePrestatair
         quartier: _quartierCtrl.text.trim(),
         description: _descCtrl.text.trim(),
         prixBase: int.tryParse(_prixCtrl.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0,
-        photos: photosPaths,
+        nouvellesPhotos: photosPaths,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -183,7 +183,8 @@ class _FormulairePrestatairePageState extends ConsumerState<FormulairePrestatair
               const Text('Métier *', style: TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
-                value: _metier != null && metiers.contains(_metier) ? _metier : null,
+                key: ValueKey(_metier),
+                initialValue: _metier != null && metiers.contains(_metier) ? _metier : null,
                 decoration: const InputDecoration(hintText: 'Choisir un métier'),
                 items: metiers.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
                 onChanged: (v) => setState(() => _metier = v),

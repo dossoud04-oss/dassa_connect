@@ -18,17 +18,12 @@ Future<void> main() async {
       url: supabaseUrl,
       publishableKey: supabaseAnonKey,
     );
-
-    // Connexion anonyme pour autoriser les écritures côté Supabase (RLS)
-    if (Supabase.instance.client.auth.currentUser == null) {
-      await Supabase.instance.client.auth.signInAnonymously();
-      debugPrint('✅ Connecté à Supabase en mode anonyme');
-    }
-  } catch (e, st) {
-    // Mode 100 % local si pas de réseau / clé invalide / hors ligne au démarrage
-    debugPrint('⚠️ Supabase non initialisé (Mode local) : $e');
-    debugPrint('$st');
+  } catch (e) {
+    // Hors ligne au démarrage ou clé invalide : l’application fonctionne en mode local.
+    debugPrint('⚠️ Supabase non initialisé (mode local) : $e');
   }
+
+  await _assurerSessionAnonyme();
 
   final db = AppDatabase(ouvrirConnexion());
 
@@ -40,15 +35,26 @@ Future<void> main() async {
   );
 }
 
-// 1. On transforme la classe en ConsumerWidget
+/// Les règles RLS exigent une session pour écrire. Si l’authentification anonyme est désactivée
+/// dans Supabase, ce message l’indique clairement au lieu d’échouer en silence.
+Future<void> _assurerSessionAnonyme() async {
+  try {
+    final auth = Supabase.instance.client.auth;
+    if (auth.currentSession == null) {
+      await auth.signInAnonymously();
+      debugPrint('✅ Session anonyme ouverte');
+    }
+  } catch (e) {
+    debugPrint('⚠️ Connexion anonyme impossible : activez « Anonymous sign-ins » dans Supabase. Détail : $e');
+  }
+}
+
 class DassaConnectApp extends ConsumerWidget {
   const DassaConnectApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 2. C'EST LA LIGNE MAGIQUE ! 
-    // En écoutant le connectivityProvider ici, il démarre au lancement de l'app 
-    // et tourne en arrière-plan tant que l'application est ouverte.
+    // Démarre la synchronisation (au lancement, au retour du réseau, puis périodiquement).
     ref.watch(connectivityProvider);
 
     return MaterialApp(

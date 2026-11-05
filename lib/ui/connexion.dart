@@ -5,7 +5,7 @@ import '../theme.dart';
 import 'widgets.dart';
 import 'client_shell.dart';
 import 'prestataire_shell.dart';
-import 'admin_shell.dart';
+import 'admin_compte.dart';
 import 'telecharger_app.dart';
 import 'formulaire_prestataire.dart';
 
@@ -88,6 +88,9 @@ class _SaisieNumeroProPageState extends ConsumerState<SaisieNumeroProPage> {
     try {
       final auth = ref.read(authProvider);
       await auth.connecterLocalement(_numero);
+      // Pull serveur avant de décider : l’admin voit les nouvelles demandes, et un prestataire
+      // retrouve sa fiche sur un nouveau téléphone (sinon un doublon serait créé).
+      await ref.read(syncProvider).synchroniser(manuelle: true);
 
       if (!mounted) return;
 
@@ -134,7 +137,7 @@ class _SaisieNumeroProPageState extends ConsumerState<SaisieNumeroProPage> {
           if (!mounted) return;
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (_) => const AdminShell()),
+            MaterialPageRoute(builder: (_) => const AdminComptePage()),
           );
         } else {
           // Prestataire : vérifier si la fiche est remplie
@@ -366,7 +369,7 @@ class _CodeAdminPageState extends ConsumerState<CodeAdminPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Icon(Icons.security, size: 56, color: vertDassa),
+            const Icon(Icons.security, size: 56, color: vertDassa),
             const SizedBox(height: 16),
             Text(
               widget.creation

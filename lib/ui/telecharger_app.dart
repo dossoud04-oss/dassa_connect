@@ -5,8 +5,8 @@ import '../theme.dart';
 
 /// Lien de l'APK Android.
 /// - Nom de fichier simple (ex. 'dassa_connect.apk') : le fichier est placé dans le dossier web/ du projet.
-/// - Ou URL complète (GitHub Releases, Supabase Storage...) : 'https://.../dassa_connect.apk'
-const String lienApkAndroid = 'dassa_connect.apk';
+/// - Ou URL complète (GitHub Releases, Supabase Storage...) : 'https://github.com/dossoud04-oss/dassa_connect/releases/download/v1.0/app-release.apk'
+const String lienApkAndroid = 'https://github.com/dossoud04-oss/dassa_connect/releases/download/v1.0/app-release.apk';
 
 /// Visible uniquement dans la version web : propose d'installer l'appli mobile.
 class BoutonTelechargerApp extends StatelessWidget {

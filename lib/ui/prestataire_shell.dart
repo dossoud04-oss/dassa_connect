@@ -3,8 +3,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../data/base.dart';
 import '../providers.dart';
 import '../theme.dart';
+import '../utils.dart';
 import 'connexion.dart';
 import 'formulaire_prestataire.dart';
 import 'widgets.dart';
@@ -20,6 +23,67 @@ class _PrestataireShellState extends ConsumerState<PrestataireShell> {
   XFile? _photoBoutique;
   String _prixBoutique = "0";
   final ImagePicker _picker = ImagePicker();
+
+  @override
+  void initState() {
+    super.initState();
+    _chargerPrix();
+  }
+
+  /// Fiche du prestataire connecté, retrouvée grâce au numéro enregistré sur ce téléphone.
+  Future<PrestataireLocal?> _monPrestataire() async {
+    final depot = ref.read(depotProvider);
+    final tel = await depot.lireEtat('telephone');
+    if (tel == null) return null;
+    return depot.prestataireParNumero(tel);
+  }
+
+  Future<void> _chargerPrix() async {
+    final moi = await _monPrestataire();
+    if (mounted && moi != null) setState(() => _prixBoutique = moi.prixBase.toString());
+  }
+
+  /// Photo affichée tout de suite, puis envoyée au Storage par la file de synchronisation.
+  Future<void> _enregistrerPhoto(XFile image) async {
+    setState(() => _photoBoutique = image);
+    final moi = await _monPrestataire();
+    if (moi != null) await ref.read(depotProvider).ajouterPhoto(moi.uid, image.path);
+  }
+
+  ({String libelle, Color couleur}) _presentationStatut(String? statut) {
+    switch (statut) {
+      case 'approved':
+        return (libelle: 'Approuvé • Visible par les clients', couleur: const Color(0xFF16A34A));
+      case 'rejected':
+        return (libelle: 'Refusé par l’administrateur', couleur: Colors.red);
+      default:
+        return (libelle: 'En attente de validation', couleur: Colors.orange);
+    }
+  }
+
+  Widget _badgeStatut() => FutureBuilder<PrestataireLocal?>(
+        future: _monPrestataire(),
+        builder: (context, snap) {
+          final p = _presentationStatut(snap.data?.statut);
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(color: p.couleur, borderRadius: BorderRadius.circular(20)),
+            child: Text(p.libelle, style: const TextStyle(color: Colors.white, fontSize: 12)),
+          );
+        },
+      );
+
+  Widget _ligneStatut() => FutureBuilder<PrestataireLocal?>(
+        future: _monPrestataire(),
+        builder: (context, snap) {
+          final p = _presentationStatut(snap.data?.statut);
+          return Row(children: [
+            Icon(Icons.info_outline, color: p.couleur, size: 16),
+            const SizedBox(width: 4),
+            Text('Statut : ${p.libelle}', style: TextStyle(color: p.couleur)),
+          ]);
+        },
+      );
 
   Future<void> _seDeconnecter() async {
     final confirm = await showDialog<bool>(
@@ -54,7 +118,7 @@ class _PrestataireShellState extends ConsumerState<PrestataireShell> {
               onTap: () async {
                 Navigator.pop(context);
                 final XFile? image = await _picker.pickImage(source: ImageSource.camera);
-                if (image != null) setState(() => _photoBoutique = image);
+                if (image != null) await _enregistrerPhoto(image);
               },
             ),
             ListTile(
@@ -63,7 +127,7 @@ class _PrestataireShellState extends ConsumerState<PrestataireShell> {
               onTap: () async {
                 Navigator.pop(context);
                 final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-                if (image != null) setState(() => _photoBoutique = image);
+                if (image != null) await _enregistrerPhoto(image);
               },
             ),
           ],
@@ -86,10 +150,16 @@ class _PrestataireShellState extends ConsumerState<PrestataireShell> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
           ElevatedButton(
-            onPressed: () {
-              setState(() => _prixBoutique = controller.text);
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Prix mis à jour !')));
+            onPressed: () async {
+              final navigateur = Navigator.of(context);
+              final messenger = ScaffoldMessenger.of(context);
+              final prix = int.tryParse(controller.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+              final moi = await _monPrestataire();
+              if (moi != null) await ref.read(depotProvider).changerPrix(moi.uid, prix);
+              if (!mounted) return;
+              setState(() => _prixBoutique = prix.toString());
+              navigateur.pop();
+              messenger.showSnackBar(const SnackBar(content: Text('Prix mis à jour !')));
             },
             child: const Text('Enregistrer'),
           ),
@@ -216,7 +286,7 @@ class _PrestataireShellState extends ConsumerState<PrestataireShell> {
               const SizedBox(width: 10),
               Expanded(child: _carteStat('Commandes', '0', Icons.receipt_long)),
               const SizedBox(width: 10),
-              Expanded(child: _carteStat('Revenu', _prixBoutique, Icons.monetization_on)),
+              Expanded(child: _carteStat('Prix (FCFA)', _prixBoutique, Icons.monetization_on)),
             ],
           ),
           const SizedBox(height: 24),
@@ -252,11 +322,11 @@ class _PrestataireShellState extends ConsumerState<PrestataireShell> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Row(children: [Icon(Icons.store, color: vertDassa), SizedBox(width: 8), Text('Ma boutique', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))]),
-                    Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(20)), child: const Text('En attente', style: TextStyle(color: Colors.white, fontSize: 12))),
+                    _badgeStatut(),
                   ],
                 ),
                 const SizedBox(height: 12),
-                const Row(children: [Icon(Icons.info_outline, color: Colors.orange, size: 16), SizedBox(width: 4), Text('Statut : En attente de validation', style: TextStyle(color: Colors.orange))]),
+                _ligneStatut(),
               ],
             ),
           ),
@@ -266,18 +336,68 @@ class _PrestataireShellState extends ConsumerState<PrestataireShell> {
   }
 
   Widget _pageCommandes() {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.receipt_long, size: 64, color: Colors.grey),
-          SizedBox(height: 16),
-          Text('Aucune commande', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          Text('Vos commandes clients apparaîtront ici.', style: TextStyle(color: Colors.grey)),
-        ],
+    return FutureBuilder<PrestataireLocal?>(
+      future: _monPrestataire(),
+      builder: (context, snap) {
+        final moi = snap.data;
+        if (moi == null) return _videCommandes();
+        return StreamBuilder<List<CommandeLocale>>(
+          stream: ref.read(depotProvider).surveillerCommandesPrestataire(moi.uid),
+          builder: (context, cmd) {
+            final liste = cmd.data ?? const <CommandeLocale>[];
+            if (liste.isEmpty) return _videCommandes();
+            return ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: liste.length,
+              itemBuilder: (context, i) => _carteCommande(liste[i]),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _carteCommande(CommandeLocale c) {
+    final audio = c.audioUrl;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${c.statut} • ${tempsEcoule(c.creeLe)} • client ${c.clientTelephone}',
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            if (c.messageTexte?.isNotEmpty == true) ...[
+              const SizedBox(height: 6),
+              Text(c.messageTexte!, style: const TextStyle(fontSize: 15)),
+            ],
+            if (audio != null) ...[
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: () => launchUrl(Uri.parse(audio), mode: LaunchMode.externalApplication),
+                child: BulleVocale(source: audio, duree: c.audioDuree),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
+
+  Widget _videCommandes() => const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.receipt_long, size: 64, color: Colors.grey),
+            SizedBox(height: 16),
+            Text('Aucune commande', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            Text('Vos commandes clients apparaîtront ici.', style: TextStyle(color: Colors.grey)),
+          ],
+        ),
+      );
 
   Widget _pageBoutique() {
     return SingleChildScrollView(

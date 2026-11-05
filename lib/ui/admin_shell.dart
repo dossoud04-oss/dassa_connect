@@ -77,6 +77,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     return Column(
       children: [
         const BandeauConnexion(),
+        _bandeauErreurs(),
         if (!isOnline)
           Container(
             width: double.infinity,
@@ -114,6 +115,42 @@ class _AdminShellState extends ConsumerState<AdminShell> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Opérations refusées par le serveur (ex. compte admin Supabase non ouvert) :
+  /// on le signale au lieu de laisser croire qu’une validation est enregistrée.
+  Widget _bandeauErreurs() {
+    final depot = ref.read(depotProvider);
+    return StreamBuilder<int>(
+      stream: depot.nombreEnErreur(),
+      builder: (context, snap) {
+        final n = snap.data ?? 0;
+        if (n == 0) return const SizedBox.shrink();
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+          decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(12)),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '$n action(s) refusée(s) par le serveur. Vérifiez la connexion administrateur Supabase.',
+                  style: TextStyle(fontSize: 12, color: Colors.red.shade800),
+                ),
+              ),
+              TextButton(
+                onPressed: () async {
+                  await depot.reessayerEnErreur();
+                  await ref.read(syncProvider).synchroniser(manuelle: true);
+                },
+                child: const Text('Réessayer'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -280,9 +317,9 @@ class _AdminShellState extends ConsumerState<AdminShell> {
           elevation: 0,
           color: Colors.grey.shade50,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade200)),
-          child: Column(
+          child: const Column(
             children: [
-              const ListTile(
+              ListTile(
                 leading: Icon(Icons.pin, color: vertDassa),
                 title: Text('Code PIN (4 chiffres)'),
                 subtitle: Text('Premier niveau de sécurité'),
@@ -389,7 +426,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
                   context: context,
                   builder: (ctx) => AlertDialog(
                     title: const Text('Supprimer ?'),
-                    content: Text('Retirer définitivement ${p.nom} ?'),
+                    content: Text('Retirer définitivement ${p.nom} ? Ses commandes seront aussi supprimées.'),
                     actions: [
                       TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
                       TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Supprimer', style: TextStyle(color: Colors.red))),

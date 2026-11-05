@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../utils.dart';
 import 'base.dart';
+import 'lecture.dart';
 
 /// Au-delà de ce nombre d’échecs, une opération sort de la file active et reste « en erreur ».
 const int seuilEchecs = 5;
@@ -13,13 +14,17 @@ const _uuid = Uuid();
 
 /// Toutes les lectures et écritures locales.
 /// Chaque écriture ajoute aussi une opération à la file, dans la même transaction.
+///
+/// Les payloads de la file utilisent les noms de colonnes Supabase réels
+/// (uid, prix_base, client_telephone…) : la synchro n'a plus de mapping à deviner.
 class Depot {
   Depot(this.db);
 
   final AppDatabase db;
 
-  // ---------- Catalogue et prestataires ----------
+  // ---------- Prestataires ----------
 
+  /// Ce que voit le client : uniquement les fiches validées par l’admin.
   Stream<List<PrestataireLocal>> surveillerCatalogue() => (db.select(db.prestataires)
         ..where((t) => t.statut.equals('approved'))
         ..orderBy([(t) => OrderingTerm.asc(t.nom)]))
@@ -30,9 +35,6 @@ class Depot {
 
   Stream<List<PrestataireLocal>> surveillerTous() => db.select(db.prestataires).watch();
 
-  Future<PrestataireLocal?> prestataireParTelephone(String telephone) =>
-      (db.select(db.prestataires)..where((t) => t.telephone.equals(telephone))).getSingleOrNull();
-
   /// Retrouve un prestataire par son numéro, quel que soit le format enregistré.
   Future<PrestataireLocal?> prestataireParNumero(String numero) async {
     final tous = await db.select(db.prestataires).get();
@@ -42,8 +44,9 @@ class Depot {
     return null;
   }
 
-
-  /// Crée ou met à jour le profil prestataire local (statut pending par défaut).
+  /// Crée ou met à jour la fiche. Les nouvelles photos (chemins locaux) sont ajoutées
+  /// à la file : elles seront envoyées au Storage une par une.
+  /// [tarifs] null = ne pas modifier les tarifs existants.
   Future<String> creerOuMajPrestataire({
     required String telephone,
     required String nom,
@@ -51,57 +54,55 @@ class Depot {
     required String quartier,
     String description = '',
     int prixBase = 0,
-    List<String> photos = const [],
-    List<Map<String, dynamic>> tarifs = const [],
+    List<String> nouvellesPhotos = const [],
+    List<Map<String, dynamic>>? tarifs,
   }) async {
     final existant = await prestataireParNumero(telephone);
     final uid = existant?.uid ?? _uuid.v4();
     final maintenant = DateTime.now().toUtc();
-    final companion = PrestatairesCompanion(
-      uid: Value(uid),
-      nom: Value(nom),
-      categorie: Value(categorie),
-      quartier: Value(quartier),
-      description: Value(description),
-      prixBase: Value(prixBase),
-      photos: Value(jsonEncode(photos)),
-      tarifs: Value(jsonEncode(tarifs)),
-      telephone: Value(telephone),
-      statut: Value(existant?.statut ?? 'pending'),
-      vues: Value(existant?.vues ?? 0),
-      updatedAt: Value(maintenant),
-    );
+    final photos = [...?existant?.photosList, ...nouvellesPhotos];
+
     await db.transaction(() async {
-      await db.into(db.prestataires).insertOnConflictUpdate(companion);
-      await _ajouter('prestataires', uid, existant == null ? 'insert' : 'update', {
-        'id': uid,
+      await db.into(db.prestataires).insertOnConflictUpdate(PrestatairesCompanion(
+            uid: Value(uid),
+            nom: Value(nom),
+            categorie: Value(categorie),
+            quartier: Value(quartier),
+            description: Value(description),
+            prixBase: Value(prixBase),
+            photos: Value(jsonEncode(photos)),
+            tarifs: Value(jsonEncode(tarifs ?? existant?.tarifsList ?? const [])),
+            telephone: Value(telephone),
+            statut: Value(existant?.statut ?? 'pending'),
+            vues: Value(existant?.vues ?? 0),
+            updatedAt: Value(maintenant),
+          ));
+
+      // Colonnes envoyées à Supabase. Le statut n’est JAMAIS envoyé ici : seul l’admin le change.
+      final distant = <String, dynamic>{
+        'uid': uid,
         'nom': nom,
         'categorie': categorie,
         'quartier': quartier,
         'description': description,
         'prix_base': prixBase,
-        'photos': photos,
-        'tarifs': tarifs,
         'telephone': telephone,
-        'statut': existant?.statut ?? 'pending',
-      });
+        if (tarifs != null) 'tarifs': tarifs,
+      };
+      await _ajouter('prestataires', uid, existant == null ? 'insert' : 'update', distant);
+      for (final chemin in nouvellesPhotos) {
+        await _ajouter('prestataires', uid, 'add_photo', {'uid': uid, 'photo_local': chemin});
+      }
     });
     return uid;
-  }
-
-  Future<void> sauverPrestataires(List<PrestatairesCompanion> lignes) async {
-    await db.batch((b) => b.insertAllOnConflictUpdate(db.prestataires, lignes));
   }
 
   Future<void> supprimerPrestataire(String uid) async {
     await db.transaction(() async {
       await (db.delete(db.prestataires)..where((t) => t.uid.equals(uid))).go();
-      await _ajouter('prestataires', uid, 'delete', {'id': uid});
+      await _ajouter('prestataires', uid, 'delete', {'uid': uid});
     });
   }
-
-  Stream<List<CommandeLocale>> surveillerToutesCommandes() =>
-      (db.select(db.commandes)..orderBy([(t) => OrderingTerm.desc(t.creeLe)])).watch();
 
   Future<void> changerStatutPrestataire(String uid, String statut) =>
       _modifierFiche(uid, PrestatairesCompanion(statut: Value(statut)), {'statut': statut});
@@ -109,16 +110,28 @@ class Depot {
   Future<void> changerPrix(String uid, int prix) =>
       _modifierFiche(uid, PrestatairesCompanion(prixBase: Value(prix)), {'prix_base': prix});
 
+  /// Photo ajoutée : visible tout de suite sur ce téléphone, envoyée au Storage ensuite.
   Future<void> ajouterPhoto(String uid, String cheminLocal) async {
     await db.transaction(() async {
-      await _ajouter('prestataires', uid, 'add_photo', {'id': uid, 'photo_local': cheminLocal});
+      final ligne =
+          await (db.select(db.prestataires)..where((t) => t.uid.equals(uid))).getSingleOrNull();
+      if (ligne != null) {
+        await (db.update(db.prestataires)..where((t) => t.uid.equals(uid))).write(
+              PrestatairesCompanion(
+                photos: Value(jsonEncode([...ligne.photosList, cheminLocal])),
+                updatedAt: Value(DateTime.now().toUtc()),
+              ),
+            );
+      }
+      await _ajouter('prestataires', uid, 'add_photo', {'uid': uid, 'photo_local': cheminLocal});
     });
   }
 
-  Future<void> _modifierFiche(String uid, PrestatairesCompanion changements, Map<String, dynamic> donnees) async {
+  Future<void> _modifierFiche(
+      String uid, PrestatairesCompanion changements, Map<String, dynamic> donnees) async {
     await db.transaction(() async {
       await (db.update(db.prestataires)..where((t) => t.uid.equals(uid))).write(changements);
-      await _ajouter('prestataires', uid, 'update', {'id': uid, ...donnees});
+      await _ajouter('prestataires', uid, 'update', {'uid': uid, ...donnees});
     });
   }
 
@@ -128,13 +141,17 @@ class Depot {
 
   // ---------- Commandes ----------
 
+  Stream<List<CommandeLocale>> surveillerToutesCommandes() =>
+      (db.select(db.commandes)..orderBy([(t) => OrderingTerm.desc(t.creeLe)])).watch();
+
   Stream<List<CommandeLocale>> surveillerCommandesClient() =>
       (db.select(db.commandes)..orderBy([(t) => OrderingTerm.desc(t.creeLe)])).watch();
 
-  Stream<List<CommandeLocale>> surveillerCommandesPrestataire(String prestataireUid) => (db.select(db.commandes)
-        ..where((t) => t.prestataireUid.equals(prestataireUid))
-        ..orderBy([(t) => OrderingTerm.desc(t.creeLe)]))
-      .watch();
+  Stream<List<CommandeLocale>> surveillerCommandesPrestataire(String prestataireUid) =>
+      (db.select(db.commandes)
+            ..where((t) => t.prestataireUid.equals(prestataireUid))
+            ..orderBy([(t) => OrderingTerm.desc(t.creeLe)]))
+          .watch();
 
   Future<String> creerCommande({
     required String clientTelephone,
@@ -157,11 +174,11 @@ class Depot {
             updatedAt: maintenant,
           ));
       await _ajouter('commandes', uid, 'insert', {
-        'id': uid,
+        'uid': uid,
         'client_telephone': clientTelephone,
-        'prestataire_id': prestataireUid,
-        'message_texte': message,
-        'audio_duration': duree,
+        'prestataire_uid': prestataireUid,
+        'message': message,
+        'audio_duree': duree,
         'statut': 'nouvelle',
         if (audioLocal != null) 'audio_local': audioLocal,
       });
@@ -175,7 +192,7 @@ class Depot {
             statut: Value(statut),
             updatedAt: Value(DateTime.now().toUtc()),
           ));
-      await _ajouter('commandes', uid, 'update', {'id': uid, 'statut': statut});
+      await _ajouter('commandes', uid, 'update', {'uid': uid, 'statut': statut});
     });
   }
 
@@ -193,8 +210,8 @@ class Depot {
             audioLocal: Value(audioLocal),
             creeLe: DateTime.now().toUtc(),
           ));
-      await _ajouter('voice_searches', uid, 'insert', {
-        'id': uid,
+      await _ajouter('recherches', uid, 'insert', {
+        'uid': uid,
         'client_telephone': '',
         'audio_local': audioLocal,
       });
@@ -225,11 +242,28 @@ class Depot {
       .map((liste) => liste.length);
 
   /// Opérations encore à envoyer, les plus anciennes d’abord.
-  Future<List<OperationFile>> lireActives({int limite = 500}) => (db.select(db.fileAttente)
-        ..where((t) => t.tentatives.isSmallerThanValue(seuilEchecs))
-        ..orderBy([(t) => OrderingTerm.asc(t.creeLe)])
-        ..limit(limite))
-      .get();
+  /// La base ne garde que la seconde : à seconde égale, on envoie insert avant update,
+  /// puis les photos, puis les suppressions (sinon une photo partirait avant sa fiche).
+  Future<List<OperationFile>> lireActives({int limite = 500}) async {
+    final operations = await (db.select(db.fileAttente)
+          ..where((t) => t.tentatives.isSmallerThanValue(seuilEchecs))
+          ..orderBy([(t) => OrderingTerm.asc(t.creeLe)])
+          ..limit(limite))
+        .get();
+    final triees = [...operations]..sort((a, b) {
+        final parDate = a.creeLe.compareTo(b.creeLe);
+        return parDate != 0 ? parDate : _rangAction(a.action).compareTo(_rangAction(b.action));
+      });
+    return triees;
+  }
+
+  int _rangAction(String action) => switch (action) {
+        'insert' => 0,
+        'update' => 1,
+        'add_photo' => 2,
+        'delete' => 3,
+        _ => 4,
+      };
 
   /// Vrai si une modification de cette ligne attend encore d’être envoyée.
   Future<bool> ligneEnAttente(String table, String ligneId) async {
@@ -237,6 +271,26 @@ class Depot {
           ..where((t) => t.tableCible.equals(table) & t.ligneId.equals(ligneId)))
         .get();
     return operations.isNotEmpty;
+  }
+
+  /// Uids des fiches que cet appareil considère validées (sert à la réconciliation).
+  Future<List<String>> uidsApprouves() async {
+    final lignes = await (db.select(db.prestataires)..where((t) => t.statut.equals('approved'))).get();
+    return lignes.map((p) => p.uid).toList();
+  }
+
+  /// Retire une fiche du catalogue local SANS passer par la file (rien n’est renvoyé au serveur).
+  Future<void> marquerNonValidee(String uid) async {
+    await (db.update(db.prestataires)..where((t) => t.uid.equals(uid))).write(
+          const PrestatairesCompanion(statut: Value('pending')),
+        );
+  }
+
+  /// Remet en file les opérations refusées par le serveur, pour un nouvel essai.
+  Future<void> reessayerEnErreur() async {
+    await (db.update(db.fileAttente)..where((t) => t.tentatives.isBiggerOrEqualValue(seuilEchecs))).write(
+          const FileAttenteCompanion(tentatives: Value(0)),
+        );
   }
 
   Future<void> acquitter(String id) async {
@@ -251,9 +305,10 @@ class Depot {
 
   // ---------- Valeurs persistantes ----------
 
-  /// Suit une valeur persistante : le flux émet à chaque changement (null si absente).
-  Stream<String?> surveillerEtat(String cle) =>
-      (db.select(db.etatSync)..where((t) => t.cle.equals(cle))).watchSingleOrNull().map((ligne) => ligne?.valeur);
+  Stream<String?> surveillerEtat(String cle) => (db.select(db.etatSync)
+        ..where((t) => t.cle.equals(cle)))
+      .watchSingleOrNull()
+      .map((ligne) => ligne?.valeur);
 
   Future<String?> lireEtat(String cle) async {
     final ligne = await (db.select(db.etatSync)..where((t) => t.cle.equals(cle))).getSingleOrNull();

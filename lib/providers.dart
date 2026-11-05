@@ -38,7 +38,7 @@ final voixProvider = Provider<VoiceService>((ref) {
 });
 
 final isOnlineProvider = StreamProvider<bool>((ref) async* {
-  bool _estConnecte(List<ConnectivityResult> results) {
+  bool estConnecte(List<ConnectivityResult> results) {
     if (results.isEmpty) return false;
     // Sur web / desktop, wifi/ethernet/mobile/vpn/other = en ligne
     return results.any((r) =>
@@ -52,14 +52,14 @@ final isOnlineProvider = StreamProvider<bool>((ref) async* {
   // 1) État initial immédiat (évite le faux "Mode Avion" au démarrage)
   try {
     final initial = await Connectivity().checkConnectivity();
-    yield _estConnecte(initial);
+    yield estConnecte(initial);
   } catch (_) {
     yield true; // en cas d'erreur de plugin, on suppose en ligne
   }
 
   // 2) Puis écoute des changements
   await for (final results in Connectivity().onConnectivityChanged) {
-    yield _estConnecte(results);
+    yield estConnecte(results);
   }
 });
 

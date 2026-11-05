@@ -1,12 +1,15 @@
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
+
+import '../data/base.dart';
+import '../data/lecture.dart';
 import '../providers.dart';
 import '../theme.dart';
+import '../utils.dart';
 import 'fiche.dart';
 
+/// Vue client : n’affiche QUE les prestataires validés par l’admin, lus dans la base locale
+/// (alimentée par la synchro Supabase). Tirer vers le bas pour actualiser.
 class PrestatairesPage extends ConsumerStatefulWidget {
   final String? categorie;
   final String recherche;
@@ -17,211 +20,43 @@ class PrestatairesPage extends ConsumerStatefulWidget {
 }
 
 class _PrestatairesPageState extends ConsumerState<PrestatairesPage> {
-  final TextEditingController _searchController = TextEditingController();
-  final ImagePicker _picker = ImagePicker();
-  XFile? _imageSelectionnee;
-  bool _ecouteEnCours = false;
+  late final TextEditingController _rechercheCtrl = TextEditingController(text: widget.recherche);
 
   @override
-  void initState() {
-    super.initState();
-    if (widget.recherche.isNotEmpty) {
-      _searchController.text = widget.recherche;
-    }
+  void dispose() {
+    _rechercheCtrl.dispose();
+    super.dispose();
   }
 
-  Future<void> _demarrerEcoute() async {
-    setState(() => _ecouteEnCours = true);
-    await Future.delayed(const Duration(seconds: 2));
-    if (mounted) {
-      setState(() => _ecouteEnCours = false);
-      _searchController.text = "Menuisier Sokponta";
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Commande vocale reconnue !')),
-      );
-    }
-  }
+  Future<void> _actualiser() => ref.read(syncProvider).synchroniser(manuelle: true);
 
-  Future<void> _choisirImage(ImageSource source) async {
-    try {
-      final XFile? image = await _picker.pickImage(source: source, imageQuality: 70);
-      if (image != null) setState(() => _imageSelectionnee = image);
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
-    }
-  }
-
-  void _afficherOptionsImage() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt, color: vertDassa),
-              title: const Text('Prendre une photo'),
-              onTap: () { Navigator.pop(context); _choisirImage(ImageSource.camera); },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library, color: vertDassa),
-              title: const Text('Choisir dans la galerie'),
-              onTap: () { Navigator.pop(context); _choisirImage(ImageSource.gallery); },
-            ),
-          ],
-        ),
-      ),
-    );
+  bool _correspond(PrestataireLocal p, String requete) {
+    if (requete.isEmpty) return true;
+    final texte = '${p.nom} ${p.categorie} ${p.quartier} ${p.description}'.toLowerCase();
+    return requete.split(RegExp(r'\s+')).every((mot) => texte.contains(mot));
   }
 
   @override
   Widget build(BuildContext context) {
-    final toutesLesCategories = ref.watch(categoriesProvider);
-    final recherche = _searchController.text.toLowerCase();
-    
-    final categoriesFiltrees = Map.fromEntries(
-      toutesLesCategories.entries.where((entry) => entry.key.toLowerCase().contains(recherche))
-    );
+    final categories = ref.watch(categoriesProvider);
+    final catalogue = ref.watch(catalogueProvider);
+    final requete = _rechercheCtrl.text.trim().toLowerCase();
+    final categoriesFiltrees =
+        categories.entries.where((e) => e.key.toLowerCase().contains(requete)).toList();
 
     return Scaffold(
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        child: RefreshIndicator(
+          onRefresh: _actualiser,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             children: [
-              // EN-TÊTE style Presta
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: vertDassa,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: vertDassa.withValues(alpha: 0.35),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: const Center(
-                          child: Text('DC', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      const Text(
-                        'Dassa Connect',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: vertDassa),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      IconButton(
-                        onPressed: () {},
-                        icon: const Icon(Icons.notifications_none_rounded, size: 26, color: vertDassa),
-                      ),
-                      const CircleAvatar(
-                        radius: 18,
-                        backgroundColor: purpleLight,
-                        child: Icon(Icons.person, color: vertDassa, size: 20),
-                      ),
-                    ],
-                  )
-                ],
-              ),
+              _entete(),
               const SizedBox(height: 16),
-
-              // BARRE DE RECHERCHE + ICONE VOCALE ORANGE
-              Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(26),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: TextField(
-                        controller: _searchController,
-                        onChanged: (val) => setState(() {}),
-                        decoration: const InputDecoration(
-                          hintText: 'Rechercher un prestataire...',
-                          prefixIcon: Icon(Icons.search, color: Colors.grey),
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(vertical: 14),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  GestureDetector(
-                    onTap: _demarrerEcoute,
-                    child: Container(
-                      height: 52,
-                      width: 52,
-                      decoration: BoxDecoration(
-                        color: _ecouteEnCours ? Colors.red : orangeDassa,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        _ecouteEnCours ? Icons.mic : Icons.mic_none,
-                        color: Colors.white,
-                        size: 26,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // BOUTON PHOTO
-              OutlinedButton.icon(
-                onPressed: _afficherOptionsImage,
-                icon: const Icon(Icons.add_a_photo_rounded, color: vertDassa),
-                label: const Text('Décrire avec une photo', style: TextStyle(color: vertDassa)),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 48),
-                  side: BorderSide(color: vertDassa.withValues(alpha: 0.5)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-              ),
-
-              if (_imageSelectionnee != null) ...[
-                const SizedBox(height: 12),
-                Stack(
-                  alignment: Alignment.topRight,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: kIsWeb
-                          ? Image.network(_imageSelectionnee!.path, height: 140, width: double.infinity, fit: BoxFit.cover)
-                          : Image.file(File(_imageSelectionnee!.path), height: 140, width: double.infinity, fit: BoxFit.cover),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.cancel, color: Colors.white),
-                      onPressed: () => setState(() => _imageSelectionnee = null),
-                    ),
-                  ],
-                ),
-              ],
+              _barreRecherche(),
               const SizedBox(height: 24),
-
-              // CATÉGORIES (Grille comme Maquette 5)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Catégories', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  TextButton(onPressed: () {}, child: const Text('Voir tout >', style: TextStyle(color: vertDassa))),
-                ],
-              ),
+              const Text('Catégories', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
               GridView.builder(
                 shrinkWrap: true,
@@ -234,11 +69,9 @@ class _PrestatairesPageState extends ConsumerState<PrestatairesPage> {
                 ),
                 itemCount: categoriesFiltrees.length,
                 itemBuilder: (context, index) {
-                  final entry = categoriesFiltrees.entries.elementAt(index);
-                  final nom = entry.key;
-                  final icone = getIconFromString(entry.value);
+                  final entree = categoriesFiltrees[index];
                   return InkWell(
-                    onTap: () => setState(() => _searchController.text = nom),
+                    onTap: () => setState(() => _rechercheCtrl.text = entree.key),
                     borderRadius: BorderRadius.circular(16),
                     child: Container(
                       decoration: BoxDecoration(
@@ -249,9 +82,9 @@ class _PrestatairesPageState extends ConsumerState<PrestatairesPage> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(icone, size: 36, color: vertDassa),
+                          Icon(getIconFromString(entree.value), size: 36, color: vertDassa),
                           const SizedBox(height: 8),
-                          Text(nom, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                          Text(entree.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                         ],
                       ),
                     ),
@@ -259,26 +92,34 @@ class _PrestatairesPageState extends ConsumerState<PrestatairesPage> {
                 },
               ),
               const SizedBox(height: 24),
-
-              // PRESTATAIRES PRÈS DE VOUS (Cartes conformes Maquette 5)
-              const Text('Prestataires près de vous', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 12),
-              _cartePrestataireDemo(
-                context: context,
-                nom: 'Koffi Mensah',
-                metier: 'Menuisier',
-                quartier: 'Quartier Sokponta',
-                prix: '5000 FCFA',
-                imagePath: 'https://images.unsplash.com/photo-1540569014015-19a7be504e3a?w=150',
+              Text(
+                requete.isEmpty ? 'Prestataires validés' : 'Résultats',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
-              _cartePrestataireDemo(
-                context: context,
-                nom: 'Awa Bagnon',
-                metier: 'Soudeuse',
-                quartier: 'Quartier Sokponta',
-                prix: '8000 FCFA',
-                imagePath: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150',
+              ...catalogue.when<List<Widget>>(
+                loading: () => [
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                ],
+                error: (e, _) => [_videEtat(Icons.error_outline, 'Impossible de charger les prestataires', '$e')],
+                data: (liste) {
+                  final visibles = liste.where((p) => _correspond(p, requete)).toList();
+                  if (visibles.isEmpty) {
+                    return [
+                      _videEtat(
+                        Icons.person_search,
+                        liste.isEmpty ? 'Aucun prestataire validé pour le moment' : 'Aucun résultat',
+                        'Tirez vers le bas pour actualiser.',
+                      ),
+                    ];
+                  }
+                  return visibles
+                      .map((p) => Padding(padding: const EdgeInsets.only(bottom: 12), child: _carte(p)))
+                      .toList();
+                },
               ),
             ],
           ),
@@ -287,14 +128,92 @@ class _PrestatairesPageState extends ConsumerState<PrestatairesPage> {
     );
   }
 
-  Widget _cartePrestataireDemo({
-    required BuildContext context,
-    required String nom,
-    required String metier,
-    required String quartier,
-    required String prix,
-    required String imagePath,
-  }) {
+  Widget _entete() => Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: vertDassa,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(color: vertDassa.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 3)),
+              ],
+            ),
+            child: const Center(
+              child: Text('DC', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Text(
+            'Dassa Connect',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: vertDassa),
+          ),
+        ],
+      );
+
+  Widget _barreRecherche() => Row(
+        children: [
+          Expanded(
+            child: Container(
+              height: 52,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(26),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: TextField(
+                controller: _rechercheCtrl,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  hintText: 'Rechercher un métier ou un quartier...',
+                  prefixIcon: Icon(Icons.search, color: Colors.grey),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          GestureDetector(
+            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Recherche vocale : bientôt disponible')),
+            ),
+            child: Container(
+              height: 52,
+              width: 52,
+              decoration: const BoxDecoration(color: orangeDassa, shape: BoxShape.circle),
+              child: const Icon(Icons.mic_none, color: Colors.white, size: 26),
+            ),
+          ),
+        ],
+      );
+
+  Widget _videEtat(IconData icone, String titre, String sous) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Column(
+          children: [
+            Icon(icone, size: 48, color: const Color(0xFFBDBDBD)),
+            const SizedBox(height: 12),
+            Text(
+              titre,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.grey, fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            Text(sous, textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+          ],
+        ),
+      );
+
+  Widget _carte(PrestataireLocal p) {
+    final photos = p.photosList;
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -303,40 +222,29 @@ class _PrestatairesPageState extends ConsumerState<PrestatairesPage> {
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.all(12),
-        onTap: () {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => const FichePage()));
-        },
-        leading: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Image.network(imagePath, width: 60, height: 60, fit: BoxFit.cover),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FichePage(prestataire: p))),
+        leading: CircleAvatar(
+          radius: 28,
+          backgroundColor: vertClair,
+          backgroundImage: photos.isNotEmpty ? NetworkImage(photos.first) : null,
+          child: photos.isEmpty
+              ? Text(initiales(p.nom), style: const TextStyle(color: vertDassa, fontWeight: FontWeight.bold))
+              : null,
         ),
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(nom, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: vertDassa,
-                borderRadius: BorderRadius.circular(12),
+        title: Text(p.nom, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${p.categorie} • ${p.quartier}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 4),
+              Text(
+                'À partir de ${formatFcfa(p.prixBase)}',
+                style: const TextStyle(fontWeight: FontWeight.bold, color: vertDassa),
               ),
-              child: const Text('● Hors ligne', style: TextStyle(color: Colors.white, fontSize: 10)),
-            ),
-          ],
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.location_on_outlined, size: 14, color: Colors.grey),
-                Text(' $quartier', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text('À partir de $prix', style: const TextStyle(fontWeight: FontWeight.bold, color: vertDassa)),
-          ],
+            ],
+          ),
         ),
       ),
     );

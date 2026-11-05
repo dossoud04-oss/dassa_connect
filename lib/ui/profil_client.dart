@@ -19,7 +19,7 @@ class ProfilClientPage extends ConsumerWidget {
           padding: const EdgeInsets.all(16),
           children: [
             const SizedBox(height: 8),
-            Center(
+            const Center(
               child: Column(
                 children: [
                   CircleAvatar(
@@ -104,7 +104,7 @@ class ProfilClientPage extends ConsumerWidget {
                 leading: const Icon(Icons.notifications_outlined, color: vertDassa),
                 title: const Text('Notifications'),
                 subtitle: const Text('Alertes commandes et messages'),
-                trailing: Switch(value: true, onChanged: (_) {}, activeColor: vertDassa),
+                trailing: Switch(value: true, onChanged: (_) {}, activeThumbColor: vertDassa),
               ),
             ]),
 
