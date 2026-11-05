@@ -1,142 +1,52 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../data/images.dart';
 import '../providers.dart';
 import '../theme.dart';
 import 'connexion.dart';
+import 'photo.dart';
 
-/// Profil client sans obligation de compte : historique local, préférences, infos app.
+/// Profil client : numéro pour suivre les commandes, photo facultative, à propos.
 class ProfilClientPage extends ConsumerWidget {
   const ProfilClientPage({super.key});
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final depot = ref.watch(depotProvider);
-
-    return Scaffold(
-      backgroundColor: grisFond,
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
+  Future<void> _changerPhoto(BuildContext context, WidgetRef ref) async {
+    final depot = ref.read(depotProvider);
+    final picker = ImagePicker();
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Wrap(
           children: [
-            const SizedBox(height: 8),
-            const Center(
-              child: Column(
-                children: [
-                  CircleAvatar(
-                    radius: 40,
-                    backgroundColor: vertClair,
-                    child: Icon(Icons.person, size: 44, color: vertDassa),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text('Espace Client', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: vertDassa)),
-                  const SizedBox(height: 4),
-                  const Text('Pas besoin de compte pour explorer', style: TextStyle(color: grisTexte, fontSize: 13)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            _section('Mes commandes', [
-              StreamBuilder(
-                stream: depot.surveillerCommandesClient(),
-                builder: (context, snap) {
-                  final cmds = snap.data ?? [];
-                  if (cmds.isEmpty) {
-                    return const ListTile(
-                      leading: Icon(Icons.inbox_outlined, color: grisTexte),
-                      title: Text('Aucune commande pour le moment'),
-                      subtitle: Text('Vos commandes vocales apparaîtront ici'),
-                    );
-                  }
-                  return Column(
-                    children: cmds.take(10).map((c) {
-                      return ListTile(
-                        leading: const Icon(Icons.mic, color: orangeDassa),
-                        title: Text(c.messageTexte?.isNotEmpty == true ? c.messageTexte! : 'Commande vocale'),
-                        subtitle: Text('${c.clientTelephone} • ${c.statut}'),
-                        trailing: Text(
-                          '${c.creeLe.day}/${c.creeLe.month}',
-                          style: const TextStyle(fontSize: 12, color: grisTexte),
-                        ),
-                      );
-                    }).toList(),
-                  );
-                },
-              ),
-            ]),
-
-            _section('Préférences', [
-              ListTile(
-                leading: const Icon(Icons.phone_android, color: vertDassa),
-                title: const Text('Mon numéro (optionnel)'),
-                subtitle: const Text('Utilisé uniquement lors d\'une commande'),
-                onTap: () async {
-                  final ctrl = TextEditingController();
-                  final n = await showDialog<String>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Enregistrer mon numéro'),
-                      content: TextField(
-                        controller: ctrl,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(prefixText: '+229 ', hintText: '01 XX XX XX XX'),
-                      ),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
-                        ElevatedButton(
-                          onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-                          child: const Text('Sauver'),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (n != null && n.isNotEmpty) {
-                    await depot.ecrireEtat('client_telephone', '+229$n');
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Numéro enregistré localement')),
-                      );
-                    }
-                  }
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.notifications_outlined, color: vertDassa),
-                title: const Text('Notifications'),
-                subtitle: const Text('Alertes commandes et messages'),
-                trailing: Switch(value: true, onChanged: (_) {}, activeThumbColor: vertDassa),
-              ),
-            ]),
-
-            _section('À propos', [
-              const ListTile(
-                leading: Icon(Icons.info_outline, color: vertDassa),
-                title: Text('Dassa Connect'),
-                subtitle: Text('Trouver un prestataire près de toi • Mode hors-ligne'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.handyman, color: vertDassa),
-                title: const Text('Devenir prestataire'),
-                subtitle: const Text('Proposer vos services'),
-                onTap: () {
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (_) => const ConnexionPage()),
-                    (_) => false,
-                  );
-                },
-              ),
-            ]),
-
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const ConnexionPage()),
-                  (_) => false,
-                );
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: vertDassa),
+              title: const Text('Prendre une photo'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final img = await picker.pickImage(
+                    source: ImageSource.camera, maxWidth: 400, maxHeight: 400, imageQuality: 70);
+                if (img != null) await depot.ecrireEtat('photo_client', versDataUrl(await img.readAsBytes()));
               },
-              icon: const Icon(Icons.home_outlined),
-              label: const Text('Retour à l\'accueil connexion'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: vertDassa),
+              title: const Text('Choisir dans la galerie'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final img = await picker.pickImage(
+                    source: ImageSource.gallery, maxWidth: 400, maxHeight: 400, imageQuality: 70);
+                if (img != null) await depot.ecrireEtat('photo_client', versDataUrl(await img.readAsBytes()));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text('Supprimer la photo'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await depot.supprimerEtat('photo_client');
+              },
             ),
           ],
         ),
@@ -144,23 +54,154 @@ class ProfilClientPage extends ConsumerWidget {
     );
   }
 
-  Widget _section(String titre, List<Widget> children) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
+  Future<void> _modifierNumero(BuildContext context, WidgetRef ref, String? actuel) async {
+    final depot = ref.read(depotProvider);
+    final ctrl = TextEditingController(text: actuel == null ? '' : actuel.replaceFirst('+229', ''));
+    final saisie = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mon numéro'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Les prestataires vous répondent sur ce numéro. Facultatif.',
+                style: TextStyle(fontSize: 13)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(prefixText: '+229 ', hintText: '01 XX XX XX XX'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('Enregistrer')),
+        ],
       ),
-      child: Column(
+    );
+    if (saisie == null) return;
+    final chiffres = saisie.replaceAll(RegExp(r'[^0-9]'), '');
+    if (chiffres.isEmpty) {
+      await depot.supprimerEtat('client_telephone');
+    } else if (chiffres.length < 8) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Numéro invalide (8 chiffres minimum).')));
+      }
+    } else {
+      await depot.ecrireEtat('client_telephone', chiffres.startsWith('229') ? '+$chiffres' : '+229$chiffres');
+    }
+  }
+
+  Widget _section(String titre, List<Widget> lignes) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-            child: Text(titre, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: vertDassa)),
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(titre,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: vertDassa)),
           ),
-          ...children,
+          Container(
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+            child: Column(
+              children: [
+                for (var i = 0; i < lignes.length; i++) ...[
+                  if (i > 0) const Divider(height: 1, indent: 56),
+                  lignes[i],
+                ],
+              ],
+            ),
+          ),
         ],
+      );
+
+  Widget _tuile(IconData icone, String titre, String sous, VoidCallback? onTap) => ListTile(
+        leading: Icon(icone, color: vertDassa),
+        title: Text(titre, style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Text(sous, style: const TextStyle(fontSize: 12, color: grisTexte)),
+        trailing: onTap == null ? null : const Icon(Icons.chevron_right, color: grisTexte),
+        onTap: onTap,
+      );
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final depot = ref.watch(depotProvider);
+    return Scaffold(
+      backgroundColor: grisFond,
+      body: SafeArea(
+        child: StreamBuilder<String?>(
+          stream: depot.surveillerEtat('photo_client'),
+          builder: (context, snapPhoto) => StreamBuilder<String?>(
+            stream: depot.surveillerEtat('client_telephone'),
+            builder: (context, snapTel) {
+              final photo = snapPhoto.data;
+              final tel = snapTel.data;
+              return ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Center(
+                    child: Column(
+                      children: [
+                        GestureDetector(
+                          onTap: () => _changerPhoto(context, ref),
+                          child: Stack(
+                            children: [
+                              Avatar(initiales: 'C', photo: photo, rayon: 46),
+                              Positioned(
+                                right: 0,
+                                bottom: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(5),
+                                  decoration: const BoxDecoration(color: vertDassa, shape: BoxShape.circle),
+                                  child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text('Mon profil',
+                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: noirTexte)),
+                        const SizedBox(height: 2),
+                        Text(tel ?? 'Aucun numéro enregistré', style: const TextStyle(color: grisTexte)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  _section('Mon compte', [
+                    _tuile(
+                      Icons.phone_iphone,
+                      'Mon numéro',
+                      tel == null ? 'Ajouter pour suivre mes commandes' : 'Utilisé pour vos commandes',
+                      () => _modifierNumero(context, ref, tel),
+                    ),
+                    _tuile(
+                      Icons.photo_camera_outlined,
+                      'Photo de profil',
+                      photo == null ? 'Facultatif' : 'Modifier ou supprimer',
+                      () => _changerPhoto(context, ref),
+                    ),
+                  ]),
+                  const SizedBox(height: 16),
+                  _section('À propos', [
+                    _tuile(Icons.info_outline, 'Dassa Connect', 'Trouver un prestataire près de vous', null),
+                  ]),
+                  const SizedBox(height: 22),
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute<void>(builder: (_) => const ConnexionPage()),
+                      (route) => false,
+                    ),
+                    icon: const Icon(Icons.home_outlined),
+                    label: const Text('Retour à l’accueil'),
+                    style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
       ),
     );
   }

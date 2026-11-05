@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'data/base.dart';
 import 'data/depot.dart';
 import 'services/auth.dart';
+import 'services/messagerie.dart';
 import 'services/reseau.dart';
 import 'services/voix.dart';
 import 'sync/synchro.dart';
@@ -138,3 +140,57 @@ final commandesClientProvider = StreamProvider<List<CommandeLocale>>(
 final tousPrestatairesProvider = StreamProvider<List<PrestataireLocal>>(
   (ref) => ref.watch(depotProvider).surveillerTous(),
 );
+
+// ---------- Données dynamiques des espaces client et prestataire ----------
+
+/// Fiche du prestataire connecté sur ce téléphone, mise à jour en direct.
+final monPrestataireProvider = StreamProvider<PrestataireLocal?>(
+  (ref) => ref.watch(depotProvider).surveillerMonPrestataire(),
+);
+
+/// Commandes reçues par le prestataire connecté, mises à jour en direct.
+final commandesMoiProvider = StreamProvider<List<CommandeLocale>>(
+  (ref) => ref.watch(depotProvider).surveillerCommandesMoi(),
+);
+
+/// Nombre de commandes encore « nouvelles » pour le prestataire connecté.
+final nouvellesCommandesProvider = Provider<AsyncValue<int>>(
+  (ref) => ref
+      .watch(commandesMoiProvider)
+      .whenData((liste) => liste.where((c) => c.statut == 'nouvelle').length),
+);
+
+final messagerieProvider = Provider<Messagerie>((ref) {
+  SupabaseClient? client;
+  try {
+    client = Supabase.instance.client;
+  } catch (_) {
+    client = null;
+  }
+  return Messagerie(client, ref.watch(depotProvider));
+});
+
+/// Nombre de conversations avec un nouveau message de l’autre partie (rôle 'client' ou 'prestataire').
+/// Recalculé toutes les 8 secondes ; hors ligne, il reste à 0 sans bloquer l’écran.
+final messagesNonLusProvider = StreamProvider.family<int, String>((ref, role) async* {
+  final messagerie = ref.watch(messagerieProvider);
+  while (true) {
+    int nombre;
+    try {
+      nombre = await messagerie.compterNonLus(role);
+    } catch (_) {
+      nombre = 0;
+    }
+    yield nombre;
+    await Future<void>.delayed(const Duration(seconds: 8));
+  }
+});
+
+/// Synchronisation automatique tant que l’application est ouverte (toutes les 20 secondes).
+final rafraichissementProvider = Provider<void>((ref) {
+  final minuterie = Timer.periodic(const Duration(seconds: 20), (_) {
+    ref.read(syncProvider).synchroniser(manuelle: true);
+  });
+  ref.onDispose(minuterie.cancel);
+});
+

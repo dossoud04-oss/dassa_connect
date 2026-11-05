@@ -26,10 +26,13 @@ Future<void> main() async {
   await _assurerSessionAnonyme();
 
   final db = AppDatabase(ouvrirConnexion());
+  final depot = Depot(db);
+  // Au démarrage, on retente les opérations restées en échec (ex. après l’activation de la connexion anonyme).
+  await depot.reessayerEnErreur();
 
   runApp(
     ProviderScope(
-      overrides: [depotProvider.overrideWithValue(Depot(db))],
+      overrides: [depotProvider.overrideWithValue(depot)],
       child: const DassaConnectApp(),
     ),
   );
@@ -56,6 +59,7 @@ class DassaConnectApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Démarre la synchronisation (au lancement, au retour du réseau, puis périodiquement).
     ref.watch(connectivityProvider);
+    ref.watch(rafraichissementProvider);
 
     return MaterialApp(
       title: 'Dassa Connect',

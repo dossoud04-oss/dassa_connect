@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import '../data/images.dart';
 import '../providers.dart';
 import '../theme.dart';
 import 'prestataire_shell.dart';
@@ -68,7 +69,7 @@ class _FormulairePrestatairePageState extends ConsumerState<FormulairePrestatair
             title: const Text('Appareil photo'),
             onTap: () async {
               Navigator.pop(ctx);
-              final img = await _picker.pickImage(source: ImageSource.camera, imageQuality: 70);
+              final img = await _picker.pickImage(source: ImageSource.camera, maxWidth: 800, maxHeight: 800, imageQuality: 75);
               if (img != null) setState(() => _photos.add(img));
             },
           ),
@@ -77,7 +78,7 @@ class _FormulairePrestatairePageState extends ConsumerState<FormulairePrestatair
             title: const Text('Galerie'),
             onTap: () async {
               Navigator.pop(ctx);
-              final imgs = await _picker.pickMultiImage(imageQuality: 70);
+              final imgs = await _picker.pickMultiImage(maxWidth: 800, maxHeight: 800, imageQuality: 75);
               if (imgs.isNotEmpty) setState(() => _photos.addAll(imgs));
             },
           ),
@@ -95,7 +96,11 @@ class _FormulairePrestatairePageState extends ConsumerState<FormulairePrestatair
     setState(() => _occupe = true);
     try {
       final depot = ref.read(depotProvider);
-      final photosPaths = _photos.map((p) => p.path).toList();
+      // Photos converties en texte (data URL) : elles restent disponibles même après un rechargement.
+      final photosPaths = <String>[];
+      for (final p in _photos) {
+        photosPaths.add(versDataUrl(await p.readAsBytes()));
+      }
       await depot.creerOuMajPrestataire(
         telephone: widget.telephone,
         nom: _nomCtrl.text.trim(),

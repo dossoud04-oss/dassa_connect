@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../data/base.dart';
 import '../providers.dart';
 import '../theme.dart';
+import '../utils.dart';
 import 'connexion.dart';
+import 'statuts.dart';
 import 'widgets.dart';
 
 class AdminShell extends ConsumerStatefulWidget {
@@ -200,75 +203,93 @@ class _AdminShellState extends ConsumerState<AdminShell> {
   // ---------- TRANSACTIONS / COMMANDES ----------
   Widget _transactions() {
     final depot = ref.watch(depotProvider);
+    final prestataires = ref.watch(tousPrestatairesProvider).valueOrNull ?? const <PrestataireLocal>[];
     return Column(
       children: [
         const BandeauConnexion(compact: true),
         Expanded(
-          child: StreamBuilder(
+          child: StreamBuilder<List<CommandeLocale>>(
             stream: depot.surveillerToutesCommandes(),
             builder: (context, snapshot) {
-              final cmds = snapshot.data ?? [];
+              final cmds = snapshot.data ?? const <CommandeLocale>[];
+              final nouvelles = cmds.where((c) => c.statut == 'nouvelle').length;
+              final terminees = cmds.where((c) => c.statut == 'livree').length;
               return ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  const Text('Commandes', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 12),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Transactions / Commandes', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                      _badgeCount('${cmds.length}'),
+                      Expanded(child: _miniStat('Total', '${cmds.length}', vertDassa)),
+                      const SizedBox(width: 8),
+                      Expanded(child: _miniStat('Nouvelles', '$nouvelles', orangeDassa)),
+                      const SizedBox(width: 8),
+                      Expanded(child: _miniStat('Terminées', '$terminees', const Color(0xFF16A34A))),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   if (cmds.isEmpty)
-                    _emptyBox(Icons.receipt_long, 'Aucune transaction', 'Les commandes clients apparaîtront ici.')
+                    _emptyBox(Icons.receipt_long, 'Aucune commande', 'Les commandes clients apparaîtront ici.')
                   else
-                    ...cmds.map((c) => Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.mic, color: orangeDassa, size: 20),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      c.messageTexte?.isNotEmpty == true ? c.messageTexte! : 'Commande vocale',
-                                      style: const TextStyle(fontWeight: FontWeight.w700),
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: vertClair,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(c.statut, style: const TextStyle(fontSize: 11, color: vertDassa, fontWeight: FontWeight.w600)),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              Text('Client : ${c.clientTelephone}', style: const TextStyle(fontSize: 12, color: grisTexte)),
-                              Text('Prestataire ID : ${c.prestataireUid.substring(0, 8)}…', style: const TextStyle(fontSize: 11, color: grisTexte)),
-                              Text('${c.creeLe.day}/${c.creeLe.month}/${c.creeLe.year} ${c.creeLe.hour}:${c.creeLe.minute.toString().padLeft(2, '0')}',
-                                  style: const TextStyle(fontSize: 11, color: grisTexte)),
-                              if (c.montant > 0)
-                                Text('${c.montant} FCFA', style: const TextStyle(fontWeight: FontWeight.w700, color: vertDassa)),
-                            ],
-                          ),
-                        )),
+                    ...cmds.map((c) => _carteCommandeAdmin(c, prestataires)),
                 ],
               );
             },
           ),
         ),
       ],
+    );
+  }
+
+  Widget _carteCommandeAdmin(CommandeLocale c, List<PrestataireLocal> prestataires) {
+    var nomPrestataire = 'Prestataire supprimé';
+    for (final p in prestataires) {
+      if (p.uid == c.prestataireUid) {
+        nomPrestataire = p.nom;
+        break;
+      }
+    }
+    final couleur = couleurStatutCommande(c.statut);
+    final vocal = c.audioUrl != null || c.audioLocal != null;
+    final contenu = c.messageTexte?.isNotEmpty == true
+        ? c.messageTexte!
+        : (vocal ? 'Message vocal (${formatDuree(c.audioDuree)})' : 'Commande sans contenu');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(vocal ? Icons.mic : Icons.receipt_long, color: couleur, size: 20),
+              const SizedBox(width: 8),
+              Expanded(child: Text(nomPrestataire, style: const TextStyle(fontWeight: FontWeight.w700))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(color: couleur.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
+                child: Text(
+                  libelleStatut(c.statut),
+                  style: TextStyle(fontSize: 11, color: couleur, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(contenu, maxLines: 2, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 4),
+          Text(
+            'Client ${c.clientTelephone} • ${tempsEcoule(c.creeLe)}',
+            style: const TextStyle(fontSize: 12, color: grisTexte),
+          ),
+        ],
+      ),
     );
   }
 
@@ -324,8 +345,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
                 title: Text('Code PIN (4 chiffres)'),
                 subtitle: Text('Premier niveau de sécurité'),
               ),
-              const Divider(height: 1),
-              const ListTile(
+              Divider(height: 1),
+              ListTile(
                 leading: Icon(Icons.password, color: orangeDassa),
                 title: Text('Code secret admin'),
                 subtitle: Text('2e code alphanumérique (clavier)'),

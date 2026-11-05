@@ -5,18 +5,16 @@ import 'package:uuid/uuid.dart';
 
 import '../utils.dart';
 import 'base.dart';
+import 'fil.dart';
 import 'lecture.dart';
 
-/// Au-delà de ce nombre d’échecs, une opération sort de la file active et reste « en erreur ».
+/// Au-delà de ce nombre d'échecs, une opération sort de la file active et reste « en erreur ».
 const int seuilEchecs = 5;
 
 const _uuid = Uuid();
 
-/// Toutes les lectures et écritures locales.
-/// Chaque écriture ajoute aussi une opération à la file, dans la même transaction.
-///
-/// Les payloads de la file utilisent les noms de colonnes Supabase réels
-/// (uid, prix_base, client_telephone…) : la synchro n'a plus de mapping à deviner.
+/// Toutes les lectures et écritures locales. Chaque écriture ajoute aussi une opération
+/// à la file d'envoi, dans la même transaction.
 class Depot {
   Depot(this.db);
 
@@ -24,7 +22,7 @@ class Depot {
 
   // ---------- Prestataires ----------
 
-  /// Ce que voit le client : uniquement les fiches validées par l’admin.
+  /// Ce que voit le client : uniquement les fiches validées par l'admin.
   Stream<List<PrestataireLocal>> surveillerCatalogue() => (db.select(db.prestataires)
         ..where((t) => t.statut.equals('approved'))
         ..orderBy([(t) => OrderingTerm.asc(t.nom)]))
@@ -35,6 +33,19 @@ class Depot {
 
   Stream<List<PrestataireLocal>> surveillerTous() => db.select(db.prestataires).watch();
 
+  /// La fiche du prestataire connecté sur ce téléphone (null pour un client).
+  Stream<PrestataireLocal?> surveillerMonPrestataire() {
+    return Stream.fromFuture(lireEtat('telephone')).asyncExpand((tel) {
+      if (tel == null) return Stream<PrestataireLocal?>.value(null);
+      return surveillerTous().map<PrestataireLocal?>((liste) {
+        for (final p in liste) {
+          if (memeNumero(p.telephone, tel)) return p;
+        }
+        return null;
+      });
+    });
+  }
+
   /// Retrouve un prestataire par son numéro, quel que soit le format enregistré.
   Future<PrestataireLocal?> prestataireParNumero(String numero) async {
     final tous = await db.select(db.prestataires).get();
@@ -44,8 +55,10 @@ class Depot {
     return null;
   }
 
-  /// Crée ou met à jour la fiche. Les nouvelles photos (chemins locaux) sont ajoutées
-  /// à la file : elles seront envoyées au Storage une par une.
+  Future<PrestataireLocal?> prestataireParUid(String uid) =>
+      (db.select(db.prestataires)..where((t) => t.uid.equals(uid))).getSingleOrNull();
+
+  /// Crée ou met à jour la fiche. [nouvellesPhotos] : photos en data URL (versDataUrl).
   /// [tarifs] null = ne pas modifier les tarifs existants.
   Future<String> creerOuMajPrestataire({
     required String telephone,
@@ -78,7 +91,7 @@ class Depot {
             updatedAt: Value(maintenant),
           ));
 
-      // Colonnes envoyées à Supabase. Le statut n’est JAMAIS envoyé ici : seul l’admin le change.
+      // Le statut n'est JAMAIS envoyé ici : seul l'admin le change.
       final distant = <String, dynamic>{
         'uid': uid,
         'nom': nom,
@@ -90,8 +103,8 @@ class Depot {
         if (tarifs != null) 'tarifs': tarifs,
       };
       await _ajouter('prestataires', uid, existant == null ? 'insert' : 'update', distant);
-      for (final chemin in nouvellesPhotos) {
-        await _ajouter('prestataires', uid, 'add_photo', {'uid': uid, 'photo_local': chemin});
+      for (final image in nouvellesPhotos) {
+        await _ajouter('prestataires', uid, 'add_photo', {'uid': uid, 'photo_data': image});
       }
     });
     return uid;
@@ -110,20 +123,20 @@ class Depot {
   Future<void> changerPrix(String uid, int prix) =>
       _modifierFiche(uid, PrestatairesCompanion(prixBase: Value(prix)), {'prix_base': prix});
 
-  /// Photo ajoutée : visible tout de suite sur ce téléphone, envoyée au Storage ensuite.
-  Future<void> ajouterPhoto(String uid, String cheminLocal) async {
+  /// Photo ajoutée : visible tout de suite (data URL), envoyée au serveur ensuite.
+  Future<void> ajouterPhoto(String uid, String dataUrl) async {
     await db.transaction(() async {
       final ligne =
           await (db.select(db.prestataires)..where((t) => t.uid.equals(uid))).getSingleOrNull();
       if (ligne != null) {
         await (db.update(db.prestataires)..where((t) => t.uid.equals(uid))).write(
               PrestatairesCompanion(
-                photos: Value(jsonEncode([...ligne.photosList, cheminLocal])),
+                photos: Value(jsonEncode([...ligne.photosList, dataUrl])),
                 updatedAt: Value(DateTime.now().toUtc()),
               ),
             );
       }
-      await _ajouter('prestataires', uid, 'add_photo', {'uid': uid, 'photo_local': cheminLocal});
+      await _ajouter('prestataires', uid, 'add_photo', {'uid': uid, 'photo_data': dataUrl});
     });
   }
 
@@ -141,23 +154,49 @@ class Depot {
 
   // ---------- Commandes ----------
 
-  Stream<List<CommandeLocale>> surveillerToutesCommandes() =>
-      (db.select(db.commandes)..orderBy([(t) => OrderingTerm.desc(t.creeLe)])).watch();
+  Stream<List<CommandeLocale>> surveillerToutesCommandes() => _commandesTriees(null);
 
-  Stream<List<CommandeLocale>> surveillerCommandesClient() =>
-      (db.select(db.commandes)..orderBy([(t) => OrderingTerm.desc(t.creeLe)])).watch();
+  Stream<List<CommandeLocale>> surveillerCommandesClient() => surveillerToutesCommandes();
 
   Stream<List<CommandeLocale>> surveillerCommandesPrestataire(String prestataireUid) =>
-      (db.select(db.commandes)
-            ..where((t) => t.prestataireUid.equals(prestataireUid))
-            ..orderBy([(t) => OrderingTerm.desc(t.creeLe)]))
-          .watch();
+      _commandesTriees(prestataireUid);
 
+  /// Les commandes du prestataire connecté sur ce téléphone (liste vide pour un client).
+  Stream<List<CommandeLocale>> surveillerCommandesMoi() {
+    return surveillerMonPrestataire().asyncExpand((moi) {
+      if (moi == null) return Stream<List<CommandeLocale>>.value(const []);
+      return surveillerCommandesPrestataire(moi.uid);
+    });
+  }
+
+  Stream<CommandeLocale?> surveillerCommande(String uid) =>
+      (db.select(db.commandes)..where((t) => t.uid.equals(uid))).watchSingleOrNull();
+
+  Stream<List<CommandeLocale>> _commandesTriees(String? prestataireUid) {
+    final requete = db.select(db.commandes)..orderBy([(t) => OrderingTerm.desc(t.creeLe)]);
+    if (prestataireUid != null) {
+      requete.where((t) => t.prestataireUid.equals(prestataireUid));
+    }
+    return requete.watch();
+  }
+
+  /// Toutes les commandes de cet appareil, la plus récente d'abord.
+  Future<List<CommandeLocale>> lireToutesCommandes() =>
+      (db.select(db.commandes)..orderBy([(t) => OrderingTerm.desc(t.creeLe)])).get();
+
+  /// Les commandes d'une conversation, la plus récente d'abord.
+  Future<List<CommandeLocale>> commandesDuFil(String role, String cle) async {
+    final toutes = await lireToutesCommandes();
+    return toutes.where((c) => cleFil(role, c) == cle).toList();
+  }
+
+  /// Crée la première commande d'une conversation. Un message vocal est gardé en mémoire
+  /// (octets) : il est envoyé même si la page est rechargée entre-temps.
   Future<String> creerCommande({
     required String clientTelephone,
     required String prestataireUid,
     String? message,
-    String? audioLocal,
+    Uint8List? audioBytes,
     int duree = 0,
   }) async {
     final uid = _uuid.v4();
@@ -168,7 +207,7 @@ class Depot {
             clientTelephone: clientTelephone,
             prestataireUid: prestataireUid,
             messageTexte: Value(message),
-            audioLocal: Value(audioLocal),
+            audioLocal: Value(audioBytes == null ? null : 'audio_en_attente'),
             audioDuree: Value(duree),
             creeLe: maintenant,
             updatedAt: maintenant,
@@ -180,7 +219,7 @@ class Depot {
         'message': message,
         'audio_duree': duree,
         'statut': 'nouvelle',
-        if (audioLocal != null) 'audio_local': audioLocal,
+        if (audioBytes != null) 'audio_b64': base64Encode(audioBytes),
       });
     });
     return uid;
@@ -200,7 +239,52 @@ class Depot {
     await db.into(db.commandes).insertOnConflictUpdate(ligne);
   }
 
-  // ---------- Recherches vocales ----------
+  // ---------- Messages ----------
+
+  /// Messages pas encore arrivés au serveur (« en cours d'envoi » ou « échec »).
+  Stream<List<Map<String, dynamic>>> surveillerOperationsMessages() {
+    final flux =
+        (db.select(db.fileAttente)..where((t) => t.tableCible.equals('commande_messages'))).watch();
+    return flux.map((lignes) => lignes.map(_versMessageEnAttente).toList());
+  }
+
+  Stream<List<Map<String, dynamic>>> operationsMessages(String commandeUid) =>
+      surveillerOperationsMessages()
+          .map((liste) => liste.where((p) => p['commande_uid'] == commandeUid).toList());
+
+  Map<String, dynamic> _versMessageEnAttente(OperationFile l) {
+    final p = jsonDecode(l.payload) as Map<String, dynamic>;
+    p.remove('audio_b64');
+    p['cree_le'] = l.creeLe.toUtc().toIso8601String();
+    p['erreur'] = l.tentatives >= seuilEchecs;
+    return p;
+  }
+
+  /// Envoie un message (texte, vocal, ou les deux) dans une commande.
+  Future<String> envoyerMessage({
+    required String commandeUid,
+    required String auteur,
+    String? texte,
+    Uint8List? audioBytes,
+    int duree = 0,
+  }) async {
+    final uid = _uuid.v4();
+    await _ajouter('commande_messages', uid, 'insert', {
+      'uid': uid,
+      'commande_uid': commandeUid,
+      'auteur': auteur,
+      'texte': texte,
+      'audio_duree': duree,
+      if (audioBytes != null) 'audio_b64': base64Encode(audioBytes),
+    });
+    return uid;
+  }
+
+  /// Mémorise l'heure de lecture d'une conversation (pastilles « non lu »).
+  Future<void> marquerLu(String role, String cle) =>
+      ecrireEtat(cleLu(role, cle), DateTime.now().toUtc().toIso8601String());
+
+  // ---------- Recherches ----------
 
   Future<void> creerRecherche(String audioLocal) async {
     final uid = _uuid.v4();
@@ -218,7 +302,7 @@ class Depot {
     });
   }
 
-  // ---------- File d’attente ----------
+  // ---------- File d'attente ----------
 
   Future<void> _ajouter(String table, String ligneId, String action, Map<String, dynamic> donnees) =>
       db.into(db.fileAttente).insert(FileAttenteCompanion.insert(
@@ -241,9 +325,8 @@ class Depot {
       .watch()
       .map((liste) => liste.length);
 
-  /// Opérations encore à envoyer, les plus anciennes d’abord.
-  /// La base ne garde que la seconde : à seconde égale, on envoie insert avant update,
-  /// puis les photos, puis les suppressions (sinon une photo partirait avant sa fiche).
+  /// Opérations encore à envoyer. À seconde égale, on envoie insert avant update,
+  /// puis les photos, puis les suppressions.
   Future<List<OperationFile>> lireActives({int limite = 500}) async {
     final operations = await (db.select(db.fileAttente)
           ..where((t) => t.tentatives.isSmallerThanValue(seuilEchecs))
@@ -265,7 +348,7 @@ class Depot {
         _ => 4,
       };
 
-  /// Vrai si une modification de cette ligne attend encore d’être envoyée.
+  /// Vrai si une modification de cette ligne attend encore d'être envoyée.
   Future<bool> ligneEnAttente(String table, String ligneId) async {
     final operations = await (db.select(db.fileAttente)
           ..where((t) => t.tableCible.equals(table) & t.ligneId.equals(ligneId)))
@@ -273,23 +356,30 @@ class Depot {
     return operations.isNotEmpty;
   }
 
-  /// Uids des fiches que cet appareil considère validées (sert à la réconciliation).
+  /// Uids des fiches que cet appareil considère validées.
   Future<List<String>> uidsApprouves() async {
     final lignes = await (db.select(db.prestataires)..where((t) => t.statut.equals('approved'))).get();
     return lignes.map((p) => p.uid).toList();
   }
 
-  /// Retire une fiche du catalogue local SANS passer par la file (rien n’est renvoyé au serveur).
+  /// Retire une fiche du catalogue local SANS passer par la file (rien n'est renvoyé au serveur).
   Future<void> marquerNonValidee(String uid) async {
     await (db.update(db.prestataires)..where((t) => t.uid.equals(uid))).write(
           const PrestatairesCompanion(statut: Value('pending')),
         );
   }
 
-  /// Remet en file les opérations refusées par le serveur, pour un nouvel essai.
+  /// Remet en file les opérations refusées, pour un nouvel essai.
   Future<void> reessayerEnErreur() async {
     await (db.update(db.fileAttente)..where((t) => t.tentatives.isBiggerOrEqualValue(seuilEchecs))).write(
           const FileAttenteCompanion(tentatives: Value(0)),
+        );
+  }
+
+  /// Met à jour le contenu d'une opération (ex. adresse de photo déjà envoyée).
+  Future<void> majPayload(String id, Map<String, dynamic> donnees) async {
+    await (db.update(db.fileAttente)..where((t) => t.id.equals(id))).write(
+          FileAttenteCompanion(payload: Value(jsonEncode(donnees))),
         );
   }
 
