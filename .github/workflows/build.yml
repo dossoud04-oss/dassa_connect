@@ -26,7 +26,7 @@ jobs:
 
       # Compilation d'un seul APK ultra-compatible (ARM 32 et 64 bits)
       - name: Build Android APK
-        run: flutter build apk --release --target-platform android-arm,android-arm64 --no-tree-shake-icons
+        run: flutter build apk --release --no-shrink --target-platform android-arm,android-arm64 --no-tree-shake-icons
 
       # Sauvegarde de l'APK
       - name: Upload Android APK
